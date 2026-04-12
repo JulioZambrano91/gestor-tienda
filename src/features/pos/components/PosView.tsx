@@ -34,6 +34,18 @@ export function PosView() {
   const [successSale, setSuccessSale] = useState<any>(null)
   const [loadingProducts, setLoadingProducts] = useState(true)
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
+  const [isOldSale, setIsOldSale] = useState(false)
+  const [customDate, setCustomDate] = useState('')
+
+  // Set default custom date to now when the component mounts or when isOldSale is toggled
+  useEffect(() => {
+    if (isOldSale && !customDate) {
+      const now = new Date()
+      const offset = now.getTimezoneOffset() * 60000
+      const localISOTime = new Date(now.getTime() - offset).toISOString().slice(0, 16)
+      setCustomDate(localISOTime)
+    }
+  }, [isOldSale, customDate])
 
   const loadData = useCallback(async () => {
     setLoadingProducts(true)
@@ -99,7 +111,8 @@ export function PosView() {
           items: cart.map(i => ({ productId: i.product.id, quantity: i.quantity, priceAtSale: i.product.salePrice })),
           paymentType: isFiado ? 'FIADO' : 'CONTADO',
           paymentMethod: isFiado ? 'FIADO' : paymentMethod,
-          customerId: isFiado ? (selectedCustomer || null) : null
+          customerId: isFiado ? (selectedCustomer || null) : null,
+          createdAt: isOldSale ? customDate : undefined
         })
       })
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || 'Error al procesar') }
@@ -111,7 +124,7 @@ export function PosView() {
         methodLabel, methodEmoji, isFiado,
         customerName: customers.find(c => String(c.id) === selectedCustomer)?.name
       })
-      setCart([]); setSelectedCustomer(''); setIsFiado(false); setPaymentMethod('EFECTIVO')
+      setCart([]); setSelectedCustomer(''); setIsFiado(false); setPaymentMethod('EFECTIVO'); setIsOldSale(false); setCustomDate('')
       await loadData()
     } catch (err: any) {
       alert('❌ ' + err.message)
@@ -329,6 +342,32 @@ export function PosView() {
                 )}
               </div>
             )}
+
+            {/* ── Venta Vieja toggle ── */}
+            <div className="space-y-2">
+              <button
+                onClick={() => { setIsOldSale(!isOldSale) }}
+                className={`w-full py-2.5 rounded-xl text-sm font-bold border-2 transition-all flex items-center justify-center gap-2 ${
+                  isOldSale
+                    ? 'bg-slate-700 border-slate-700 text-white shadow-md'
+                    : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400 hover:text-slate-600'
+                }`}
+              >
+                📅 {isOldSale ? 'Venta Antigua Activa — Click para hoy' : 'Registrar Venta Antigua'}
+              </button>
+              
+              {isOldSale && (
+                <div className="bg-slate-100 dark:bg-slate-900/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700 space-y-2 animate-fade-in-down">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Fecha y Hora de la Venta</label>
+                  <input 
+                    type="datetime-local" 
+                    value={customDate} 
+                    onChange={e => setCustomDate(e.target.value)}
+                    className="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg p-2 text-sm text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              )}
+            </div>
 
             {/* ── Cobrar button ── always the same, always green unless fiado ── */}
             <button onClick={handleCheckout} disabled={cart.length === 0 || processing}
