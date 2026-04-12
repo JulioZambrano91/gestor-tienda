@@ -28,6 +28,18 @@ export function DebtsView() {
   const [payProcessing, setPayProcessing] = useState(false)
   const [filter, setFilter] = useState<'all' | 'active' | 'settled'>('active')
 
+  // Add Debt State
+  const [addingDebt, setAddingDebt] = useState<number | null>(null)
+  const [addDebtAmount, setAddDebtAmount] = useState('')
+  const [addDebtConcept, setAddDebtConcept] = useState('')
+  const [addDebtProcessing, setAddDebtProcessing] = useState(false)
+
+  // New Customer State
+  const [newCustomerName, setNewCustomerName] = useState('')
+  const [newCustomerPhone, setNewCustomerPhone] = useState('')
+  const [showNewCustomer, setShowNewCustomer] = useState(false)
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false)
+
   // Search & Pagination
   const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
@@ -82,10 +94,69 @@ export function DebtsView() {
     }
   }
 
+  const handleAddDebt = async (customerId: number) => {
+    const amount = parseFloat(addDebtAmount)
+    if (isNaN(amount) || amount <= 0) { alert('Ingresa un monto válido.'); return }
+
+    setAddDebtProcessing(true)
+    const concept = addDebtConcept.trim() || 'Deuda Anterior'
+    logger.info(`Agregando deuda manual de ${amount} ${currencySymbol} al cliente ID:${customerId}... concept: ${concept}`, 'DEBTS')
+    try {
+      const res = await fetch(`/api/debts/${customerId}/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount, concept })
+      })
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+
+      setAddDebtAmount('')
+      setAddDebtConcept('')
+      setAddingDebt(null)
+      await load()
+      logger.info('Deuda manual agregada con éxito', 'DEBTS')
+    } catch (err: any) {
+      logger.error(`Error al agregar deuda manual para cliente ${customerId}`, 'DEBTS', err)
+      alert('❌ ' + err.message)
+    } finally {
+      setAddDebtProcessing(false)
+    }
+  }
+
+  const handleAddCustomer = async () => {
+    if (!newCustomerName.trim()) return
+    setIsAddingCustomer(true)
+    logger.info(`Creando nuevo cliente "${newCustomerName}" desde Fiados...`, 'DEBTS')
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCustomerName.trim(), phone: newCustomerPhone.trim() })
+      })
+      if (res.ok) {
+        const c = await res.json()
+        await load() 
+        setFilter('all')
+        setAddingDebt(c.id)
+        setExpanded(c.id)
+        setNewCustomerName('')
+        setNewCustomerPhone('')
+        setShowNewCustomer(false)
+        logger.info(`Cliente "${c.name}" creado exitosamente`, 'DEBTS')
+      } else {
+        throw new Error('Error al enviar datos del nuevo cliente')
+      }
+    } catch (err: any) {
+      logger.error('Error al crear cliente', 'DEBTS', err)
+      alert('❌ Error al crear cliente: ' + err.message)
+    } finally {
+      setIsAddingCustomer(false)
+    }
+  }
+
   const filteredCustomers = customers.filter(c => {
     const matchesFilter = filter === 'active'
       ? c.totalOwed > 0
-      : (filter === 'settled' ? (c.totalOwed === 0 && c.sales.length > 0) : c.sales.length > 0)
+      : (filter === 'settled' ? (c.totalOwed === 0 && (c.sales.length > 0 || c.expenses.length > 0)) : true)
 
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase())
 
@@ -157,9 +228,9 @@ export function DebtsView() {
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/50 shadow-sm">
-        <div className="relative">
+      {/* Search & Actions Bar */}
+      <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200 dark:border-slate-700/50 shadow-sm flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="relative flex-1 w-full">
           <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 top-3 h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
@@ -171,7 +242,29 @@ export function DebtsView() {
             className="w-full pl-10 pr-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none transition text-sm"
           />
         </div>
+        <div className="shrink-0 w-full sm:w-auto">
+          <button type="button" onClick={() => setShowNewCustomer(!showNewCustomer)} 
+            className="w-full sm:w-auto px-4 py-2.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 font-bold rounded-xl transition hover:bg-orange-200 dark:hover:bg-orange-800/40 border border-orange-200 dark:border-orange-800/50">
+            {showNewCustomer ? '❌ Cancelar Registro' : '👤 + Nuevo Cliente'}
+          </button>
+        </div>
       </div>
+
+      {showNewCustomer && (
+        <div className="bg-orange-50 dark:bg-orange-900/10 p-5 rounded-2xl border border-orange-200 dark:border-orange-800/30 animate-fade-in-down shadow-sm">
+          <h3 className="font-bold text-orange-700 dark:text-orange-400 mb-3 text-sm uppercase">Registrar Nuevo Cliente a la lista</h3>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input type="text" placeholder="Nombre completo *" value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)}
+              className="flex-1 px-4 py-2.5 border border-orange-200 dark:border-orange-800/50 rounded-xl text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-orange-400 shadow-sm" />
+            <input type="text" placeholder="Teléfono (Opcional)" value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)}
+              className="flex-1 px-4 py-2.5 border border-orange-200 dark:border-orange-800/50 rounded-xl text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-orange-400 shadow-sm" />
+            <button type="button" onClick={handleAddCustomer} disabled={isAddingCustomer}
+              className="px-8 py-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition disabled:opacity-50 text-sm whitespace-nowrap shadow-md shadow-orange-500/20">
+              {isAddingCustomer ? 'Guardando...' : 'Crear y Añadir Deuda'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Customer List */}
       {filteredCustomers.length === 0 ? (
@@ -234,9 +327,15 @@ export function DebtsView() {
                     </div>
 
                     <div className="flex gap-2">
+                      <button
+                        onClick={() => { setAddingDebt(addingDebt === customer.id ? null : customer.id); setPaying(null); setAddDebtAmount(''); setAddDebtConcept('') }}
+                        className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all ${addingDebt === customer.id ? 'bg-red-500 border-red-500 text-white' : 'border-red-200 dark:border-red-800/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'}`}
+                      >
+                        ➕ Añadir Deuda
+                      </button>
                       {!isSettled && (
                         <button
-                          onClick={() => { setPaying(isPaying ? null : customer.id); setPayAmount('') }}
+                          onClick={() => { setPaying(isPaying ? null : customer.id); setAddingDebt(null); setPayAmount(''); setPayConcept('') }}
                           className={`px-4 py-2 rounded-xl text-sm font-bold border-2 transition-all ${isPaying ? 'bg-orange-500 border-orange-500 text-white' : 'border-orange-300 dark:border-orange-700 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20'}`}
                         >
                           💳 Abonar
@@ -250,6 +349,44 @@ export function DebtsView() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Add Debt Panel */}
+                  {addingDebt === customer.id && (
+                    <div className="mx-5 mb-4 p-4 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-200 dark:border-red-800/30 space-y-3">
+                      <p className="text-sm font-semibold text-red-700 dark:text-red-400">
+                        Añadir Deuda Manual a: <strong>{customer.name}</strong>
+                      </p>
+                      <div className="flex gap-3">
+                        <div className="relative w-1/3">
+                          <span className="absolute left-3 top-2.5 text-slate-400 text-sm">{currencySymbol}</span>
+                          <input
+                            type="number" step="0.01" min="0.01"
+                            value={addDebtAmount}
+                            onChange={e => setAddDebtAmount(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full pl-10 pr-4 py-2.5 border border-red-200 dark:border-red-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-red-400 outline-none text-sm"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <input
+                            type="text"
+                            value={addDebtConcept}
+                            onChange={e => setAddDebtConcept(e.target.value)}
+                            placeholder="Descripción (ej: Saldo mes pasado)"
+                            className="w-full px-4 py-2.5 border border-red-200 dark:border-red-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-red-400 outline-none text-sm"
+                          />
+                        </div>
+                        <button
+                          disabled={addDebtProcessing}
+                          onClick={() => handleAddDebt(customer.id)}
+                          className="px-5 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl text-sm transition disabled:opacity-50"
+                        >
+                          {addDebtProcessing ? '...' : '✓ Confirmar'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-red-500 font-medium">* Esto incrementará la deuda sin afectar las estadísticas del Cajero o Finanzas.</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Pay Panel */}
@@ -327,19 +464,26 @@ export function DebtsView() {
                                 </div>
                               </div>
                             ))}
-                            {/* Render Loans (Expenses) */}
-                            {customer.expenses.map(exp => (
-                              <div key={exp.id} className="bg-red-50/30 dark:bg-red-900/10 rounded-xl p-3 border border-red-100 dark:border-red-800/20">
-                                <div className="flex justify-between items-center">
-                                  <div className="flex flex-col">
-                                    <span className="text-xs text-slate-400 font-bold uppercase">🏦 Préstamo / Adelanto</span>
-                                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 mt-1">{exp.concept}</span>
-                                    <span className="text-[10px] text-slate-400">{formatDateTime(exp.createdAt)}</span>
+                            {/* Render Loans & Manual Debts (Expenses) */}
+                            {customer.expenses.map(exp => {
+                              const isManual = exp.category === 'DEUDA_VIEJA'
+                              return (
+                                <div key={`exp-${exp.id}`} className={`${isManual ? 'bg-amber-50/40 dark:bg-amber-900/10 border-amber-200/50 dark:border-amber-800/20' : 'bg-red-50/30 dark:bg-red-900/10 border-red-100 dark:border-red-800/20'} rounded-xl p-3 border`}>
+                                  <div className="flex justify-between items-center">
+                                    <div className="flex flex-col">
+                                      <span className={`text-xs ${isManual ? 'text-amber-600 dark:text-amber-500' : 'text-slate-400'} font-bold uppercase`}>
+                                        {isManual ? '📝 Deuda Manual / Histórica' : '🏦 Préstamo / Adelanto'}
+                                      </span>
+                                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 mt-1">{exp.concept}</span>
+                                      <span className="text-[10px] text-slate-400">{formatDateTime(exp.createdAt)}</span>
+                                    </div>
+                                    <span className={`font-extrabold ${isManual ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'} text-sm`}>
+                                      {exp.amount.toFixed(2)} {currencySymbol}
+                                    </span>
                                   </div>
-                                  <span className="font-ex-bold text-red-600 dark:text-red-400 text-sm">{exp.amount.toFixed(2)} {currencySymbol}</span>
                                 </div>
-                              </div>
-                            ))}
+                              )
+                            })}
                           </div>
                         )}
                       </div>

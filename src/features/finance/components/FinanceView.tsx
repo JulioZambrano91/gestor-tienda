@@ -61,6 +61,8 @@ export function FinanceView() {
   const [expenseAccount, setExpenseAccount] = useState('EFECTIVO')
   const [expenseCustomerId, setExpenseCustomerId] = useState<string>('')
   const [submittingExpense, setSubmittingExpense] = useState(false)
+  const [formTab, setFormTab] = useState<'OUT' | 'IN'>('OUT')
+
 
   // New Customer logic (to match POS experience)
   const [newCustomerName, setNewCustomerName] = useState('')
@@ -141,7 +143,8 @@ export function FinanceView() {
     if (!expenseAmount || !expenseConcept) return
 
     setSubmittingExpense(true)
-    logger.info(`Registrando gasto: ${expenseConcept} por ${expenseAmount} ${currencySymbol}...`, 'FINANCE')
+    const finalCategory = formTab === 'IN' ? 'INGRESO_EXTRA' : expenseCategory
+    logger.info(`Registrando movimiento: ${expenseConcept} por ${expenseAmount} ${currencySymbol} (Cat: ${finalCategory})...`, 'FINANCE')
     try {
       const res = await fetch('/api/expenses', {
         method: 'POST',
@@ -149,9 +152,9 @@ export function FinanceView() {
         body: JSON.stringify({
           amount: parseFloat(expenseAmount),
           concept: expenseConcept,
-          category: expenseCategory,
+          category: finalCategory,
           account: expenseAccount,
-          customerId: expenseCategory === 'PRESTAMO' ? (expenseCustomerId ? parseInt(expenseCustomerId) : null) : null
+          customerId: finalCategory === 'PRESTAMO' ? (expenseCustomerId ? parseInt(expenseCustomerId) : null) : null
         })
       })
       if (!res.ok) throw new Error('Error al registrar salida en servidor')
@@ -411,13 +414,26 @@ export function FinanceView() {
         ))}
       </div>
 
-      {/* Expenses Control */}
+      {/* Expenses Control Tabs */}
+      <div className="flex items-center gap-2 mb-4 bg-slate-100 dark:bg-slate-800/50 p-1.5 rounded-2xl w-full sm:w-max mt-6">
+        <button 
+          onClick={() => { setFormTab('OUT'); setCurrentPageExpenses(1) }} 
+          className={`flex-1 sm:flex-none px-6 py-2.5 text-sm font-bold rounded-xl transition-all ${formTab === 'OUT' ? 'bg-white dark:bg-slate-700 shadow-sm text-red-600 dark:text-red-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+          💸 Salidas de Dinero
+        </button>
+        <button 
+          onClick={() => { setFormTab('IN'); setCurrentPageExpenses(1) }} 
+          className={`flex-1 sm:flex-none px-6 py-2.5 text-sm font-bold rounded-xl transition-all ${formTab === 'IN' ? 'bg-white dark:bg-slate-700 shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+          ➕ Saldos Extras
+        </button>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-        {/* Register Expense Form */}
-        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 p-6 shadow-sm">
-          <h3 className="font-bold text-slate-700 dark:text-slate-200 mb-4 text-lg flex items-center gap-2">
-            <span>🔴</span> Registrar Salida de Dinero
+        {/* Register Form */}
+        <div className={`bg-white dark:bg-slate-800 rounded-2xl border ${formTab === 'IN' ? 'border-emerald-200 dark:border-emerald-800/50' : 'border-slate-200 dark:border-slate-700/50'} p-6 shadow-sm transition-colors`}>
+          <h3 className={`font-bold mb-4 text-lg flex items-center gap-2 ${formTab === 'IN' ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-200'}`}>
+            <span>{formTab === 'IN' ? '🟢' : '🔴'}</span> {formTab === 'IN' ? 'Registrar Saldo Extra' : 'Registrar Salida de Dinero'}
           </h3>
           <form onSubmit={handleAddExpense} className="space-y-4">
             <div>
@@ -427,11 +443,11 @@ export function FinanceView() {
                 type="text"
                 value={expenseConcept}
                 onChange={e => setExpenseConcept(e.target.value)}
-                placeholder="Ej: Reponer Harina PAN"
-                className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-red-500 outline-none transition text-sm"
+                placeholder={formTab === 'IN' ? "Ej: Saldo Inicial / Extra en efectivo" : "Ej: Reponer Harina PAN"}
+                className={`w-full px-4 py-2.5 border rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 outline-none transition text-sm ${formTab === 'IN' ? 'border-emerald-300 dark:border-emerald-600 focus:ring-2 focus:ring-emerald-500' : 'border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-red-500'}`}
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid ${formTab === 'IN' ? 'grid-cols-1' : 'grid-cols-2'} gap-4`}>
               <div>
                 <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Monto ({currencySymbol})</label>
                 <input
@@ -441,27 +457,30 @@ export function FinanceView() {
                   value={expenseAmount}
                   onChange={e => setExpenseAmount(e.target.value)}
                   placeholder="0.00"
-                  className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-red-500 outline-none transition text-sm"
+                  className={`w-full px-4 py-2.5 border rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 outline-none transition text-sm ${formTab === 'IN' ? 'border-emerald-300 dark:border-emerald-600 focus:ring-2 focus:ring-emerald-500' : 'border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-red-500'}`}
                 />
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Categoría</label>
-                <select
-                  value={expenseCategory}
-                  onChange={e => setExpenseCategory(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-red-500 outline-none transition text-sm"
-                >
-                    <option value="COMPRA">Compra Mercancía</option>
-                    <option value="RETIRO">Retiro Ganancia</option>
-                    <option value="SERVICIO">Pago de Servicio</option>
-                    <option value="PRESTAMO">Fiado / Pendiente por Cobrar</option>
-                    <option value="OTRO">Otro</option>
+              
+              {formTab === 'OUT' && (
+                <div>
+                  <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Categoría</label>
+                  <select
+                    value={expenseCategory}
+                    onChange={e => setExpenseCategory(e.target.value)}
+                    className="w-full px-4 py-2.5 border rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 outline-none transition text-sm border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-red-500"
+                  >
+                      <option value="COMPRA">Compra Mercancía</option>
+                      <option value="RETIRO">Retiro Ganancia</option>
+                      <option value="SERVICIO">Pago de Servicio</option>
+                      <option value="PRESTAMO">Fiado / Pendiente por Cobrar</option>
+                      <option value="OTRO">Otro</option>
                   </select>
                 </div>
-              </div>
+              )}
+            </div>
 
-              {/* Customer Selector for FIADO (POS logic) */}
-              {expenseCategory === 'PRESTAMO' && (
+            {/* Customer Selector for FIADO (POS logic) */}
+            {formTab === 'OUT' && expenseCategory === 'PRESTAMO' && (
                 <div className="animate-fade-in-down space-y-2 bg-orange-50/50 dark:bg-orange-950/10 p-4 rounded-xl border border-orange-200 dark:border-orange-800/30">
                   <label className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase mb-1 block">👤 Cliente Deudor</label>
                   <select
@@ -503,13 +522,13 @@ export function FinanceView() {
 
             {/* Account selector */}
             <div>
-              <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Cuenta de salida</label>
+              <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Caja / Cuenta involucrada</label>
               <div className="grid grid-cols-3 gap-2">
                 {Object.entries(ACCOUNT_META).map(([key, meta]) => (
                   <button key={key} type="button" onClick={() => setExpenseAccount(key)}
                     className={`flex flex-col items-center gap-1 py-2 px-1 rounded-xl border-2 text-xs font-bold transition-all ${
                       expenseAccount === key
-                        ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+                        ? (formTab === 'IN' ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' : 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300')
                         : 'border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 text-slate-500 hover:border-slate-300'
                     }`}>
                     <span className="text-base">{meta.emoji}</span>
@@ -521,9 +540,9 @@ export function FinanceView() {
             <button
               disabled={submittingExpense}
               type="submit"
-              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition shadow-lg shadow-red-600/20 disabled:opacity-50"
+              className={`w-full py-3 text-white font-bold rounded-xl transition shadow-lg disabled:opacity-50 ${formTab === 'IN' ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20' : 'bg-red-600 hover:bg-red-700 shadow-red-600/20'}`}
             >
-              {submittingExpense ? 'Procesando...' : '📉 Registrar Gasto'}
+              {submittingExpense ? 'Procesando...' : (formTab === 'IN' ? '📈 Registrar Ingreso' : '📉 Registrar Salida')}
             </button>
           </form>
         </div>
@@ -531,26 +550,33 @@ export function FinanceView() {
         {/* Expense History List */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 p-6 shadow-sm overflow-hidden flex flex-col">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-slate-700 dark:text-slate-200 text-lg">Últimas Salidas de Dinero</h3>
-            <span className="text-xs text-slate-400 font-medium">{expenses.length} registros</span>
+            <h3 className="font-bold text-slate-700 dark:text-slate-200 text-lg">
+              {formTab === 'IN' ? 'Historial de Saldos Extras' : 'Últimas Salidas de Dinero'}
+            </h3>
+            <span className="text-xs text-slate-400 font-medium">
+              {expenses.filter(e => formTab === 'IN' ? e.category === 'INGRESO_EXTRA' : e.category !== 'INGRESO_EXTRA').length} registros
+            </span>
           </div>
 
           <div className="flex-1 space-y-2 mb-4">
-            {expenses.length === 0 ? (
-              <p className="text-center py-10 text-slate-400 text-sm italic">No hay salidas registradas aún</p>
+            {expenses.filter(e => formTab === 'IN' ? e.category === 'INGRESO_EXTRA' : e.category !== 'INGRESO_EXTRA').length === 0 ? (
+              <p className="text-center py-10 text-slate-400 text-sm italic">
+                {formTab === 'IN' ? 'No hay saldos extras registrados' : 'No hay salidas registradas aún'}
+              </p>
             ) : (
               expenses
+                .filter(e => formTab === 'IN' ? e.category === 'INGRESO_EXTRA' : e.category !== 'INGRESO_EXTRA')
                 .slice((currentPageExpenses - 1) * EXPENSES_PER_PAGE, currentPageExpenses * EXPENSES_PER_PAGE)
                 .map(exp => (
-                  <div key={exp.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-700/30 transition-all hover:border-slate-300 dark:hover:border-slate-600">
+                  <div key={exp.id} className={`flex items-center justify-between p-3 rounded-xl border transition-all hover:border-slate-300 dark:hover:border-slate-600 ${exp.category === 'INGRESO_EXTRA' ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-100 dark:border-emerald-800/30' : 'bg-slate-50 dark:bg-slate-900/40 border-slate-100 dark:border-slate-700/30'}`}>
                     <div className="flex items-center gap-3">
                       <span className="text-xl">
-                        {exp.category === 'COMPRA' ? '🛒' : exp.category === 'RETIRO' ? '🏦' : exp.category === 'SERVICIO' ? '⚡' : '📝'}
+                        {exp.category === 'COMPRA' ? '🛒' : exp.category === 'RETIRO' ? '🏦' : exp.category === 'SERVICIO' ? '⚡' : exp.category === 'INGRESO_EXTRA' ? '➕' : '📝'}
                       </span>
                       <div>
                         <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight">{exp.concept}</p>
                         <p className="text-[10px] text-slate-400 mt-0.5">
-                          {new Date(exp.createdAt).toLocaleString()} · {exp.category}
+                          {new Date(exp.createdAt).toLocaleString()} · {exp.category.replace('_', ' ')}
                         </p>
                         <span className={`text-[10px] font-bold mt-0.5 inline-block ${(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).color}`}>
                           {(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).emoji} {(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).label}
@@ -559,7 +585,9 @@ export function FinanceView() {
                     </div>
                     <div className="text-right flex items-center gap-4">
                       <div>
-                        <p className="text-sm font-black text-red-600 dark:text-red-400">-{exp.amount.toFixed(2)} {currencySymbol}</p>
+                        <p className={`text-sm font-black ${exp.category === 'INGRESO_EXTRA' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {exp.category === 'INGRESO_EXTRA' ? '+' : '-'}{exp.amount.toFixed(2)} {currencySymbol}
+                        </p>
                       </div>
                       <div className="flex gap-1.5">
                         <button 
@@ -593,7 +621,7 @@ export function FinanceView() {
           </div>
 
           {/* Pagination Controls */}
-          {expenses.length > EXPENSES_PER_PAGE && (
+          {expenses.filter(e => formTab === 'IN' ? e.category === 'INGRESO_EXTRA' : e.category !== 'INGRESO_EXTRA').length > EXPENSES_PER_PAGE && (
             <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
               <button
                 disabled={currentPageExpenses === 1}
@@ -603,11 +631,12 @@ export function FinanceView() {
                 Anterior
               </button>
               <span className="text-xs font-bold text-slate-400">
-                Página {currentPageExpenses} de {Math.ceil(expenses.length / EXPENSES_PER_PAGE)}
+                Página {currentPageExpenses} de {Math.ceil(expenses.filter(e => formTab === 'IN' ? e.category === 'INGRESO_EXTRA' : e.category !== 'INGRESO_EXTRA').length / EXPENSES_PER_PAGE)}
               </span>
               <button
-                disabled={currentPageExpenses >= Math.ceil(expenses.length / EXPENSES_PER_PAGE)}
+                disabled={currentPageExpenses >= Math.ceil(expenses.filter(e => formTab === 'IN' ? e.category === 'INGRESO_EXTRA' : e.category !== 'INGRESO_EXTRA').length / EXPENSES_PER_PAGE)}
                 onClick={() => setCurrentPageExpenses(prev => prev + 1)}
+
                 className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-xl disabled:opacity-30 transition hover:bg-slate-200 dark:hover:bg-slate-600"
               >
                 Siguiente
