@@ -1,14 +1,19 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 export async function POST(request: Request) {
+  const start = Date.now()
   try {
     const { items, paymentType, paymentMethod, customerId } = await request.json()
     // items: [{ productId, quantity, priceAtSale }]
 
     if (!items || items.length === 0) {
+      logger.warn('POST /api/sales - Empty items list', 'API')
       return NextResponse.json({ error: "La venta debe tener al menos un producto." }, { status: 400 })
     }
+
+    logger.info(`POST /api/sales - Processing sale: ${items.length} items, type: ${paymentType}`, 'API')
 
     // Fetch products to calculate cost & validate stock
     const productIds = items.map((i: any) => i.productId)
@@ -19,8 +24,12 @@ export async function POST(request: Request) {
 
     for (const item of items) {
       const product = products.find((p: any) => p.id === item.productId)
-      if (!product) return NextResponse.json({ error: `Producto ${item.productId} no encontrado.` }, { status: 400 })
+      if (!product) {
+        logger.warn(`POST /api/sales - Product ${item.productId} not found`, 'API')
+        return NextResponse.json({ error: `Producto ${item.productId} no encontrado.` }, { status: 400 })
+      }
       if (product.stock < item.quantity) {
+        logger.warn(`POST /api/sales - Out of stock for "${product.name}"`, 'API')
         return NextResponse.json({ error: `Stock insuficiente para "${product.name}". Disponible: ${product.stock}` }, { status: 400 })
       }
       const lineTotal = item.priceAtSale * item.quantity
@@ -68,14 +77,16 @@ export async function POST(request: Request) {
       return newSale
     })
 
+    logger.info(`POST /api/sales - SUCCESS! ID:${sale.id} Total:${totalAmount.toFixed(2)} (${Date.now() - start}ms)`, 'API')
     return NextResponse.json(sale, { status: 201 })
   } catch (error) {
-    console.error("POST Sale Error:", error)
+    logger.error("POST /api/sales failed", 'API', error)
     return NextResponse.json({ error: "Error al procesar la venta." }, { status: 500 })
   }
 }
 
 export async function GET() {
+  const start = Date.now()
   try {
     const sales = await prisma.sale.findMany({
       orderBy: { createdAt: 'desc' },
@@ -84,9 +95,10 @@ export async function GET() {
         customer: true
       }
     })
+    logger.info(`GET /api/sales - Found ${sales.length} sales (${Date.now() - start}ms)`, 'API')
     return NextResponse.json(sales)
   } catch (error) {
-    console.error("GET Sales Error:", error)
+    logger.error("GET /api/sales failed", 'API', error)
     return NextResponse.json({ error: "Error al obtener ventas." }, { status: 500 })
   }
 }

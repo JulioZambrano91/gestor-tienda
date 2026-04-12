@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useBcv } from '@/components/BcvProvider'
+import { logger } from '@/lib/logger'
 
 type DebtPayment = {
   id: number; amount: number; concept: string; createdAt: string
 }
+// ... rest of types
 type SaleItem = { quantity: number; priceAtSale: number; product: { name: string } }
 type FiadoSale = {
   id: number; createdAt: string; totalAmount: number; items: SaleItem[]
@@ -27,11 +29,17 @@ export function DebtsView() {
 
   const load = useCallback(async () => {
     setLoading(true)
+    logger.info('Cargando lista de deudores...', 'DEBTS')
     try {
       const res = await fetch('/api/debts')
-      if (res.ok) setCustomers(await res.json())
+      if (res.ok) {
+        setCustomers(await res.json())
+        logger.info('Datos de fiados cargados correctamente', 'DEBTS')
+      } else {
+        throw new Error('Error en respuesta del servidor')
+      }
     } catch (err) {
-      console.error(err)
+      logger.error('Error cargando panel de fiados', 'DEBTS', err)
     } finally {
       setLoading(false)
     }
@@ -43,18 +51,24 @@ export function DebtsView() {
     const amount = parseFloat(payAmount)
     if (isNaN(amount) || amount <= 0) { alert('Ingresa un monto válido.'); return }
     if (amount > totalOwed) { alert(`El monto supera la deuda (${totalOwed.toFixed(2)} ${currencySymbol}).`); return }
+    
     setPayProcessing(true)
+    const concept = amount >= totalOwed ? 'Saldado' : 'Abono'
+    logger.info(`Registrando abono de ${amount} ${currencySymbol} al cliente ID:${customerId}...`, 'DEBTS')
     try {
       const res = await fetch(`/api/debts/${customerId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, concept: amount >= totalOwed ? 'Saldado' : 'Abono' })
+        body: JSON.stringify({ amount, concept })
       })
       if (!res.ok) { const e = await res.json(); throw new Error(e.error) }
+      
       setPayAmount('')
       setPaying(null)
       await load()
+      logger.info('Abono registrado con éxito', 'DEBTS')
     } catch (err: any) {
+      logger.error(`Error al registrar abono para cliente ${customerId}`, 'DEBTS', err)
       alert('❌ ' + err.message)
     } finally {
       setPayProcessing(false)
