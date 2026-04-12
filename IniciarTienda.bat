@@ -30,8 +30,27 @@ if not exist "node_modules\" (
 
 :: 3. Asegurar Base de Datos sincronizada
 echo [INFO] Verificando integridad de la base de datos...
-call npx prisma db push --skip-generate >nul 2>&1
-call npx prisma generate >nul 2>&1
+if not exist ".env" (
+    echo [WARN] No se encontro el archivo .env. Creando configuracion local...
+    echo DATABASE_URL="file:./prisma/dev.db" > .env
+)
+
+call npx prisma db push --skip-generate
+if !errorlevel! neq 0 (
+    echo.
+    echo [ERROR] No se pudo sincronizar la base de datos local. 
+    echo Esto puede pasar si la base de datos esta abierta en otro programa.
+    echo.
+    pause
+    exit /b
+)
+
+call npx prisma generate
+if !errorlevel! neq 0 (
+    echo [ERROR] Hubo un fallo al generar el cliente de base de datos.
+    pause
+    exit /b
+)
 
 :: 4. Abrir navegador
 echo [INFO] Abriendo aplicacion en el navegador...
