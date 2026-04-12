@@ -5,7 +5,6 @@ import { useBcv } from '@/components/BcvProvider'
 import { logger } from '@/lib/logger'
 
 type MethodData = { revenue: number; count: number }
-// ... (rest of types)
 type MonthData = { month: string; revenue: number; profit: number; contado: number; fiado: number; expenses: number }
 type LowStock = { name: string; stock: number; costPrice: number; salePrice: number }
 type Expense = { id: number; amount: number; concept: string; category: string; account: string; createdAt: string }
@@ -18,7 +17,32 @@ type FinanceData = {
   stockValue: number; stockSaleValue: number; lowStockProducts: LowStock[]
 }
 
-// ... (rest of constants)
+const WITHDRAWAL_SAFETY_PCT = 30
+
+const MONTH_LABELS: Record<string, string> = {
+  '01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun',
+  '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'
+}
+
+const PERIODS = [
+  { label: 'Todo', value: '0' },
+  { label: 'Hoy', value: '1' },
+  { label: '7d', value: '7' },
+  { label: '30d', value: '30' },
+]
+
+const ACCOUNT_META: Record<string, { emoji: string; label: string; color: string; bg: string }> = {
+  EFECTIVO: { emoji: '💵', label: 'Efectivo', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+  PAGO_MOVIL: { emoji: '📱', label: 'Pago Móvil', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+  PUNTO_VENTA: { emoji: '💳', label: 'Punto de Venta', color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+}
+
+const METHOD_META: Record<string, { emoji: string; label: string; color: string; bg: string }> = {
+  EFECTIVO: { emoji: '💵', label: 'Efectivo', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+  PAGO_MOVIL: { emoji: '📱', label: 'Pago Móvil', color: 'text-blue-600', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+  PUNTO_VENTA: { emoji: '💳', label: 'Punto de Venta', color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+  FIADO: { emoji: '💸', label: 'Fiado', color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-900/20' },
+}
 
 export function FinanceView() {
   const { currencySymbol, convertToUsd } = useBcv()
