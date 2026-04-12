@@ -12,7 +12,11 @@ export async function GET() {
           orderBy: { createdAt: 'desc' },
           include: { items: { include: { product: { select: { name: true } } } } }
         },
-        payments: { orderBy: { createdAt: 'desc' } }
+        payments: { orderBy: { createdAt: 'desc' } },
+        expenses: {
+          where: { category: 'PRESTAMO' },
+          orderBy: { createdAt: 'desc' }
+        }
       }
     })
     return NextResponse.json(customers)

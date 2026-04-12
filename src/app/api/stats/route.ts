@@ -40,8 +40,8 @@ export async function GET(request: Request) {
         orderBy: { createdAt: 'desc' },
         take: 200,
         include: {
-          items: { include: { product: { select: { name: true } } } },
-          customer: { select: { name: true } }
+          items: { include: { product: { select: { id: true, name: true } } } },
+          customer: { select: { id: true, name: true } }
         }
       }),
 
