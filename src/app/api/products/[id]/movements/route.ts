@@ -28,18 +28,27 @@ export async function POST(
   const productId = parseInt(id)
 
   try {
-    const { quantity, totalCost, note } = await req.json()
+    const { quantity, totalCost, note, isManual } = await req.json()
     const qty = parseInt(quantity)
-    const cost = parseFloat(totalCost)
+    let cost = parseFloat(totalCost)
 
-    if (!qty || qty <= 0 || isNaN(cost) || cost < 0) {
-      return NextResponse.json({ error: 'Datos inválidos.' }, { status: 400 })
+    if (!qty || qty <= 0) {
+      return NextResponse.json({ error: 'Cantidad inválida.' }, { status: 400 })
+    }
+
+    // Get current product
+    const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } })
+
+    // If manual adjustment and no cost provided, use current cost to avoid distortion
+    if (isManual && (isNaN(cost) || cost === null)) {
+      cost = product.costPrice * qty
+    }
+
+    if (isNaN(cost) || cost < 0) {
+      return NextResponse.json({ error: 'Costo inválido.' }, { status: 400 })
     }
 
     const unitCost = cost / qty
-
-    // Get current product to compute weighted average cost
-    const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } })
 
     const currentStock = product.stock
     const currentCost = product.costPrice

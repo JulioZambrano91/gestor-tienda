@@ -8,7 +8,7 @@ import { RestockView } from '@/features/inventory/components/RestockView'
 type Product = {
   id: number; name: string; description?: string
   costPrice: number; salePrice: number; stock: number
-  imageUrl?: string; category?: { name: string }
+  imageUrl?: string; categoryId: number; category?: { name: string }
 }
 
 type FormProduct = {
@@ -48,7 +48,8 @@ export function InventoryView() {
     setEditProduct({
       id: product.id, name: product.name,
       stock: String(product.stock), costPrice: String(product.costPrice),
-      salePrice: String(product.salePrice), imageUrl: product.imageUrl || '', categoryId: ''
+      salePrice: String(product.salePrice), imageUrl: product.imageUrl || '', 
+      categoryId: String(product.categoryId)
     })
     setIsFormOpen(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })

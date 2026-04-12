@@ -10,6 +10,7 @@ type Product = {
   salePrice: number
   stock: number
   imageUrl?: string
+  categoryId: number
   category?: { name: string }
 }
 
