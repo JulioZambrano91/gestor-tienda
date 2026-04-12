@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer utilities {
   .animate-fade-in-down {
     animation: fadeInDown 0.5s ease-out;
