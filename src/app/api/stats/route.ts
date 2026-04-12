@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { logger } from '@/lib/logger'
 
 // period can be: '1h'=24h, '3d', '7d', '30d', '90d', '0'=all-time
 function parsePeriod(param: string): Date | null {
@@ -22,10 +23,13 @@ function parsePeriod(param: string): Date | null {
 }
 
 export async function GET(request: Request) {
+  const start = Date.now()
   try {
     const { searchParams } = new URL(request.url)
     const periodParam = searchParams.get('period') || '30d'
     const since = parsePeriod(periodParam)
+
+    logger.info(`GET /api/stats?period=${periodParam}`, 'API')
 
     const whereClause = since ? { createdAt: { gte: since } } : {}
 
@@ -106,6 +110,7 @@ export async function GET(request: Request) {
       byMonth[key].push(sale)
     }
 
+    logger.info(`GET /api/stats SUCCESS - ${totalSales} sales processed (${Date.now() - start}ms)`, 'API')
     return NextResponse.json({
       summary: { totalRevenue, totalProfit, totalSales, contadoSales, fiadoSales, fiadoRevenue, period: periodParam },
       topProducts: topProductsMapped,
@@ -114,7 +119,7 @@ export async function GET(request: Request) {
       byMonth
     })
   } catch (error) {
-    console.error('GET Stats Error:', error)
+    logger.error('GET /api/stats failed', 'API', error)
     return NextResponse.json({ error: 'Error al obtener estadísticas.' }, { status: 500 })
   }
 }

@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useBcv } from '@/components/BcvProvider'
+import { logger } from '@/lib/logger'
 
 type DayData = { date: string; revenue: number; profit: number }
+// ... (rest of types)
 type TopProduct = { productId: number; name: string; totalQty: number; totalRevenue: number }
 type Summary = {
   totalRevenue: number; totalProfit: number; totalSales: number
@@ -16,6 +18,7 @@ type Sale = {
 }
 
 const PERIODS = [
+// ... (rest of constants)
   { label: '24h', value: '24h' },
   { label: '3d',  value: '3d'  },
   { label: '7d',  value: '7d'  },
@@ -50,16 +53,18 @@ export function HistoryView() {
 
   const loadStats = useCallback(async () => {
     setLoading(true)
+    logger.info(`Cargando estadísticas para periodo: ${period}...`, 'HISTORY')
     try {
       const res = await fetch(`/api/stats?period=${period}`)
-      if (!res.ok) throw new Error('Error cargando estadísticas')
+      if (!res.ok) throw new Error('Error al consultar servidor')
       const data = await res.json()
       setSummary(data.summary)
       setTopProducts(data.topProducts)
       setDailyChart(data.dailyChart)
       setRecentSales(data.recentSales)
+      logger.info('Estadísticas cargadas exitosamente', 'HISTORY')
     } catch (err) {
-      console.error(err)
+      logger.error('Error cargando historial de ventas', 'HISTORY', err)
     } finally {
       setLoading(false)
     }
@@ -70,11 +75,14 @@ export function HistoryView() {
   const handleDelete = async (id: number) => {
     if (!confirm('¿Eliminar esta venta del historial? Esta acción no se puede deshacer.')) return
     setDeletingId(id)
+    logger.info(`Eliminando venta #${id}...`, 'HISTORY')
     try {
       const res = await fetch(`/api/sales/${id}`, { method: 'DELETE' })
-      if (!res.ok) throw new Error('Error al eliminar')
+      if (!res.ok) throw new Error('No se pudo borrar del servidor')
       setRecentSales(prev => prev.filter(s => s.id !== id))
-    } catch {
+      logger.info(`Venta #${id} eliminada correctamente`, 'HISTORY')
+    } catch (error) {
+      logger.error(`Error eliminando venta #${id}`, 'HISTORY', error)
       alert('No se pudo eliminar la venta.')
     } finally {
       setDeletingId(null)
@@ -83,6 +91,7 @@ export function HistoryView() {
 
   const handleSaveEdit = async () => {
     if (!editSale) return
+    logger.info(`Actualizando pago de venta #${editSale.id}...`, 'HISTORY')
     try {
       const res = await fetch(`/api/sales/${editSale.id}`, {
         method: 'PATCH',
@@ -92,10 +101,13 @@ export function HistoryView() {
       if (!res.ok) throw new Error()
       setEditSale(null)
       loadStats()
-    } catch {
+      logger.info('Venta actualizada correctamente', 'HISTORY')
+    } catch (error) {
+      logger.error(`Falló actualización de venta #${editSale.id}`, 'HISTORY', error)
       alert('Error al actualizar la venta.')
     }
   }
+// ... rest of the file
 
   const maxRevenue = Math.max(...dailyChart.map(d => d.revenue), 1)
 
@@ -313,9 +325,12 @@ export function HistoryView() {
                     const methodMeta = METHOD_LABELS[methodKey] || METHOD_LABELS.EFECTIVO
                     return (
                       <div key={sale.id}>
-                        <button
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={() => setExpandedSale(expandedSale === sale.id ? null : sale.id)}
-                          className="w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors text-left group"
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedSale(expandedSale === sale.id ? null : sale.id); } }}
+                          className="w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors text-left group cursor-pointer"
                         >
                           <div className="flex items-center gap-3">
                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${sale.paymentType === 'FIADO' ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-emerald-100 dark:bg-emerald-900/30'}`}>
@@ -360,7 +375,7 @@ export function HistoryView() {
                               </button>
                             </div>
                           </div>
-                        </button>
+                        </div>
 
                         {/* Expanded detail */}
                         {expandedSale === sale.id && (

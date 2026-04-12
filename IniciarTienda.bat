@@ -35,7 +35,7 @@ if not exist ".env" (
     echo DATABASE_URL="file:./prisma/dev.db" > .env
 )
 
-call npx prisma db push --skip-generate
+call npx prisma db push
 if !errorlevel! neq 0 (
     echo.
     echo [ERROR] No se pudo sincronizar la base de datos local. 

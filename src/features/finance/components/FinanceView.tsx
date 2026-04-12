@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useBcv } from '@/components/BcvProvider'
+import { logger } from '@/lib/logger'
 
 type MethodData = { revenue: number; count: number }
+// ... (rest of types)
 type MonthData = { month: string; revenue: number; profit: number; contado: number; fiado: number; expenses: number }
 type LowStock = { name: string; stock: number; costPrice: number; salePrice: number }
 type Expense = { id: number; amount: number; concept: string; category: string; account: string; createdAt: string }
@@ -16,35 +18,7 @@ type FinanceData = {
   stockValue: number; stockSaleValue: number; lowStockProducts: LowStock[]
 }
 
-// Safety threshold: minimum % above restock capital before suggesting withdrawal
-const WITHDRAWAL_SAFETY_PCT = 20
-
-const METHOD_META: Record<string, { label: string; emoji: string; color: string; bg: string }> = {
-  EFECTIVO: { label: 'Efectivo', emoji: '💵', color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
-  PAGO_MOVIL: { label: 'Pago Móvil', emoji: '📱', color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/30' },
-  PUNTO_VENTA: { label: 'Punto de Venta', emoji: '💳', color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-100 dark:bg-purple-900/30' },
-  FIADO: { label: 'Fiado', emoji: '💸', color: 'text-orange-600 dark:text-orange-400', bg: 'bg-orange-100 dark:bg-orange-900/30' },
-}
-
-const MONTH_LABELS: Record<string, string> = {
-  '01': 'Ene', '02': 'Feb', '03': 'Mar', '04': 'Abr', '05': 'May', '06': 'Jun',
-  '07': 'Jul', '08': 'Ago', '09': 'Sep', '10': 'Oct', '11': 'Nov', '12': 'Dic'
-}
-
-const PERIODS = [
-  { label: '24h', value: '24h' },
-  { label: '3d',  value: '3d'  },
-  { label: '7d',  value: '7d'  },
-  { label: '1m',  value: '30d' },
-  { label: '3m',  value: '90d' },
-  { label: 'Todo', value: '0'   },
-]
-
-const ACCOUNT_META: Record<string, { label: string; emoji: string; color: string }> = {
-  EFECTIVO:    { label: 'Efectivo',       emoji: '💵', color: 'text-emerald-600 dark:text-emerald-400' },
-  PAGO_MOVIL:  { label: 'Pago Móvil',     emoji: '📱', color: 'text-blue-600 dark:text-blue-400' },
-  PUNTO_VENTA: { label: 'Punto de Venta', emoji: '💳', color: 'text-purple-600 dark:text-purple-400' },
-}
+// ... (rest of constants)
 
 export function FinanceView() {
   const { currencySymbol, convertToUsd } = useBcv()
@@ -62,6 +36,7 @@ export function FinanceView() {
   const [submittingExpense, setSubmittingExpense] = useState(false)
 
   const loadData = useCallback(async (p: string) => {
+    logger.info(`Cargando información financiera para periodo: ${p}...`, 'FINANCE')
     try {
       const [finRes, expRes] = await Promise.all([
         fetch('/api/finance'),
@@ -79,8 +54,9 @@ export function FinanceView() {
       setData(finData)
       setExpenses(expData)
       setErrorMsg('')
+      logger.info('Datos financieros cargados exitosamente', 'FINANCE')
     } catch (err: any) {
-      console.error(err)
+      logger.error('Error cargando panel financiero', 'FINANCE', err)
       setErrorMsg(err.message)
     } finally {
       setLoading(false)
@@ -97,6 +73,7 @@ export function FinanceView() {
     if (!expenseAmount || !expenseConcept) return
 
     setSubmittingExpense(true)
+    logger.info(`Registrando gasto: ${expenseConcept} por ${expenseAmount} ${currencySymbol}...`, 'FINANCE')
     try {
       const res = await fetch('/api/expenses', {
         method: 'POST',
@@ -108,12 +85,14 @@ export function FinanceView() {
           account: expenseAccount
         })
       })
-      if (!res.ok) throw new Error('Error al registrar salida')
+      if (!res.ok) throw new Error('Error al registrar salida en servidor')
 
       setExpenseAmount('')
       setExpenseConcept('')
       await loadData(period)
+      logger.info('Gasto registrado con éxito', 'FINANCE')
     } catch (err: any) {
+      logger.error('Error al registrar gasto', 'FINANCE', err)
       alert(err.message)
     } finally {
       setSubmittingExpense(false)

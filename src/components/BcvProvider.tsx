@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import storeConfig from '@/config/storeProperties.json'
+import { logger } from '@/lib/logger'
 
 type BcvContextType = {
   bcvRate: number | null;
@@ -25,14 +26,18 @@ export function BcvProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function fetchBcv() {
+      logger.info('Iniciando carga de tasa BCV...', 'BCV')
       try {
         const res = await fetch("https://ve.dolarapi.com/v1/dolares/oficial")
         const data = await res.json()
         if (data && data.promedio) {
+          logger.info(`Tasa BCV cargada: ${data.promedio} Bs/USD`, 'BCV')
           setBcvRate(data.promedio)
+        } else {
+          logger.warn('Respuesta de BCV incompleta o inválida', 'BCV', data)
         }
       } catch (err) {
-        console.error("No se pudo obtener el BCV:", err)
+        logger.error("No se pudo obtener el BCV oficial", "BCV", err)
       } finally {
         setLoading(false)
       }
