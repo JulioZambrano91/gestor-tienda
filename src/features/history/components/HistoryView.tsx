@@ -50,6 +50,11 @@ export function HistoryView() {
   const [expandedSale, setExpandedSale] = useState<number | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [editSale, setEditSale] = useState<Sale | null>(null)
+  
+  // Filtering and Pagination
+  const [methodFilter, setMethodFilter] = useState('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 10
 
   const loadStats = useCallback(async () => {
     setLoading(true)
@@ -70,7 +75,10 @@ export function HistoryView() {
     }
   }, [period])
 
-  useEffect(() => { loadStats() }, [loadStats])
+  useEffect(() => { 
+    loadStats()
+    setCurrentPage(1) // Reset page when period changes
+  }, [loadStats])
 
   const handleDelete = async (id: number) => {
     if (!confirm('¿Eliminar esta venta del historial? Esta acción no se puede deshacer.')) return
@@ -121,20 +129,30 @@ export function HistoryView() {
     return d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
   }
 
-  // Group sales by month-year
+  const getMonthLabel = (key: string) => {
+    const [year, month] = key.split('-')
+    return `${MONTH_LABELS[month] || month} ${year}`
+  }
+
+  // Filter and Paginate
+  const filteredSales = recentSales.filter(sale => {
+    if (methodFilter === 'all') return true
+    const sMethod = sale.paymentMethod || (sale.paymentType === 'FIADO' ? 'FIADO' : 'EFECTIVO')
+    return sMethod === methodFilter
+  })
+
+  const totalPages = Math.ceil(filteredSales.length / ITEMS_PER_PAGE)
+  const paginatedSales = filteredSales.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
+
+  // Group current page by month
   const salesByMonth: Record<string, Sale[]> = {}
-  for (const sale of recentSales) {
+  for (const sale of paginatedSales) {
     const d = new Date(sale.createdAt)
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     if (!salesByMonth[key]) salesByMonth[key] = []
     salesByMonth[key].push(sale)
   }
   const sortedMonths = Object.keys(salesByMonth).sort((a, b) => b.localeCompare(a))
-
-  const getMonthLabel = (key: string) => {
-    const [year, month] = key.split('-')
-    return `${MONTH_LABELS[month] || month} ${year}`
-  }
 
   if (loading) {
     return (
@@ -220,6 +238,25 @@ export function HistoryView() {
           ))}
         </div>
       )}
+
+      {/* Search & Method Filters */}
+      <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex flex-wrap gap-1.5">
+          <button onClick={() => { setMethodFilter('all'); setCurrentPage(1) }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${methodFilter === 'all' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
+            Todos los métodos
+          </button>
+          {Object.entries(METHOD_LABELS).map(([key, meta]) => (
+            <button key={key} onClick={() => { setMethodFilter(key); setCurrentPage(1) }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${methodFilter === key ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
+              {meta.label}
+            </button>
+          ))}
+        </div>
+        <div className="text-xs text-slate-400 font-medium">
+          Mostrando {filteredSales.length} {filteredSales.length === 1 ? 'venta' : 'ventas'}
+        </div>
+      </div>
 
       {/* Daily Chart + Top Products */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -415,6 +452,29 @@ export function HistoryView() {
               </div>
             )
           })}
+          
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-4 pt-4">
+              <button
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => prev - 1)}
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              </button>
+              <span className="text-sm font-bold text-slate-600 dark:text-slate-400">
+                Página {currentPage} de {totalPages}
+              </span>
+              <button
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(prev => prev + 1)}
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-500 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 transition"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
