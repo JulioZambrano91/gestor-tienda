@@ -29,11 +29,12 @@ export default function RootLayout({
                   <BcvIndicator />
                 </div>
                 <nav className="flex space-x-4 items-center">
-                  <a href="/" className="hover:text-indigo-200 transition-colors">Panel Principal</a>
+                  <a href="/" className="hover:text-indigo-200 transition-colors">Inicio</a>
                   <a href="/inventory" className="hover:text-indigo-200 transition-colors">Inventario</a>
                   <a href="/pos" className="hover:text-indigo-200 transition-colors">Cajero</a>
                   <a href="/history" className="hover:text-indigo-200 transition-colors">Historial</a>
                   <a href="/debts" className="hover:text-indigo-200 transition-colors">Fiados</a>
+                  <a href="/finance" className="hover:text-indigo-200 transition-colors">Finanzas</a>
                   <div className="pl-4 border-l border-indigo-500/50">
                     <ThemeToggle />
                   </div>

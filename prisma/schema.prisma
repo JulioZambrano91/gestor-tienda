@@ -34,11 +34,12 @@ model Sale {
   createdAt   DateTime   @default(now())
   totalAmount Float
   totalProfit Float
-  paymentType String     // "CONTADO" o "FIADO"
-  
+  paymentType   String   // "CONTADO" o "FIADO"
+  paymentMethod String   @default("EFECTIVO") // "EFECTIVO", "PAGO_MOVIL", "PUNTO_VENTA", "FIADO"
+
   customerId  Int?
   customer    Customer?  @relation(fields: [customerId], references: [id])
-  
+
   items       SaleItem[]
 }
 
@@ -69,7 +70,15 @@ model DebtPayment {
   amount      Float
   createdAt   DateTime @default(now())
   concept     String?  // "Abono", "Saldado"
-  
+
   customerId  Int
   customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+model Expense {
+  id        Int      @id @default(autoincrement())
+  amount    Float
+  concept   String   // "Compra de mercancía", "Gastos operativos", "Retiro de ganancias", etc.
+  category  String   @default("OTRO") // "COMPRA", "RETIRO", "SERVICIO", "OTRO"
+  createdAt DateTime @default(now())
 }

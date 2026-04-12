@@ -3,7 +3,7 @@ import prisma from '@/lib/prisma'
 
 export async function POST(request: Request) {
   try {
-    const { items, paymentType, customerId } = await request.json()
+    const { items, paymentType, paymentMethod, customerId } = await request.json()
     // items: [{ productId, quantity, priceAtSale }]
 
     if (!items || items.length === 0) {
@@ -36,6 +36,7 @@ export async function POST(request: Request) {
           totalAmount,
           totalProfit,
           paymentType: paymentType || 'CONTADO',
+          paymentMethod: paymentMethod || (paymentType === 'FIADO' ? 'FIADO' : 'EFECTIVO'),
           customerId: customerId ? parseInt(customerId) : null,
           items: {
             create: items.map((i: any) => ({
