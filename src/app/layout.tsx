@@ -6,7 +6,7 @@ import { ThemeToggle } from '@/components/ThemeToggle'
 
 export const metadata: Metadata = {
   title: storeConfig.storeName,
-  description: 'Gestor de Tienda Local',
+  description: 'Gestor de Tienda Local XD',
 }
 
 export default function RootLayout({

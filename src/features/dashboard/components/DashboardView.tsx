@@ -1,6 +1,6 @@
 import storeConfig from '@/config/storeProperties.json'
 
-export default function Home() {
+export function DashboardView() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[70vh] text-center px-4 animate-fade-in-down">
       <div className="bg-white/50 dark:bg-slate-900/50 backdrop-blur-xl border border-slate-200 dark:border-slate-800 p-8 md:p-12 rounded-3xl shadow-xl max-w-4xl w-full">

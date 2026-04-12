@@ -13,7 +13,7 @@ type Product = {
   category?: { name: string }
 }
 
-export default function InventoryPage() {
+export function InventoryView() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState("")
