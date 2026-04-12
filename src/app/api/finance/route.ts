@@ -39,11 +39,27 @@ export async function GET() {
     for (const s of sales) {
       const d = new Date(s.createdAt)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      
+      const isFiado = s.paymentType?.toUpperCase() === 'FIADO'
+      
       if (monthlyMap[key]) {
-        monthlyMap[key].revenue += s.totalAmount
-        monthlyMap[key].profit += s.totalProfit
-        if (s.paymentType === 'FIADO') monthlyMap[key].fiado += s.totalAmount
+        // En ingresos mensuales solo sumamos lo cobrado (no FIADO)
+        if (!isFiado) {
+          monthlyMap[key].revenue += s.totalAmount
+          monthlyMap[key].profit += s.totalProfit
+        }
+        
+        if (isFiado) monthlyMap[key].fiado += s.totalAmount
         else monthlyMap[key].contado += s.totalAmount
+      }
+    }
+
+    // Sumar abonos a los ingresos mensuales reales
+    for (const p of debtPayments) {
+      const d = new Date(p.createdAt)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (monthlyMap[key]) {
+        monthlyMap[key].revenue += p.amount
       }
     }
 
@@ -59,8 +75,9 @@ export async function GET() {
     const stockSaleValue = products.reduce((s, p) => s + p.salePrice * p.stock, 0)
     const lowStockProducts = products.filter(p => p.stock <= 5)
 
-    const totalRevenue = sales.reduce((s, r) => s + r.totalAmount, 0)
-    const totalProfit = sales.reduce((s, r) => s + r.totalProfit, 0)
+    const realSales = sales.filter(s => s.paymentType?.toUpperCase() !== 'FIADO')
+    const totalRevenue = realSales.reduce((s, r) => s + r.totalAmount, 0) + totalDebtPaid
+    const totalProfit = realSales.reduce((s, r) => s + r.totalProfit, 0)
     
     const cashInHand = (byMethod['EFECTIVO'].revenue + totalDebtPaid) - totalExpenses
     const pagoMovilBalance = byMethod['PAGO_MOVIL'].revenue
