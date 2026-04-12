@@ -5,7 +5,7 @@ import { logger } from '@/lib/logger'
 export async function POST(request: Request) {
   const start = Date.now()
   try {
-    const { items, paymentType, paymentMethod, customerId } = await request.json()
+    const { items, paymentType, paymentMethod, customerId, createdAt } = await request.json()
     // items: [{ productId, quantity, priceAtSale }]
 
     if (!items || items.length === 0) {
@@ -42,6 +42,7 @@ export async function POST(request: Request) {
     const sale = await prisma.$transaction(async (tx) => {
       const newSale = await tx.sale.create({
         data: {
+          createdAt: createdAt ? new Date(createdAt) : undefined,
           totalAmount,
           totalProfit,
           paymentType: paymentType || 'CONTADO',
