@@ -23,7 +23,7 @@ export async function POST(
     }
 
     const newOwed = Math.max(0, customer.totalOwed - paymentAmount)
-    const finalConcept = newOwed === 0 ? 'Saldado' : (concept || 'Abono')
+    const finalConcept = concept?.trim() || (newOwed === 0 ? 'Saldado' : 'Abono')
 
     const [payment, updatedCustomer] = await prisma.$transaction([
       prisma.debtPayment.create({
