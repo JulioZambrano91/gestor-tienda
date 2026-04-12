@@ -30,6 +30,7 @@ export function RestockView({
   const [quantity, setQuantity] = useState('')
   const [totalCost, setTotalCost] = useState('')
   const [note, setNote] = useState('')
+  const [isManualAdjustment, setIsManualAdjustment] = useState(false)
 
   const loadMovements = useCallback(async () => {
     setLoadingHistory(true)
@@ -55,7 +56,12 @@ export function RestockView({
       const res = await fetch(`/api/products/${product.id}/movements`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity, totalCost, note })
+        body: JSON.stringify({ 
+          quantity, 
+          totalCost: isManualAdjustment && !totalCost ? null : totalCost, 
+          note,
+          isManual: isManualAdjustment
+        })
       })
       if (!res.ok) {
         const err = await res.json()
@@ -100,7 +106,24 @@ export function RestockView({
         <div className="overflow-y-auto flex-1 p-6 space-y-6">
           {/* Restock Form */}
           <form onSubmit={handleRestock} className="bg-slate-50 dark:bg-slate-900/40 rounded-2xl p-5 border border-slate-200 dark:border-slate-700/50 space-y-4">
-            <h4 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-widest">Nuevo Lote</h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="font-bold text-slate-700 dark:text-slate-200 text-sm uppercase tracking-widest">Nuevo Lote</h4>
+              <button 
+                type="button"
+                onClick={() => { setIsManualAdjustment(!isManualAdjustment); setTotalCost('') }}
+                className={`text-xs px-3 py-1 rounded-full font-bold border transition ${isManualAdjustment ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 border-slate-200 dark:border-slate-600'}`}
+              >
+                {isManualAdjustment ? '⚠️ Ajuste Manual Activo' : '⚙️ Modo Ajuste'}
+              </button>
+            </div>
+            
+            {isManualAdjustment && (
+              <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800/30 p-3 rounded-xl mb-4">
+                <p className="text-xs text-orange-700 dark:text-orange-400 leading-relaxed font-medium">
+                  <strong>Modo Ajuste Forzado:</strong> Úsalo para correcciones de stock. Si no incluyes costo total, se mantendrá el costo unitario actual ({product.costPrice.toFixed(2)} {currencySymbol}).
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Unidades que llegan</label>
@@ -109,9 +132,11 @@ export function RestockView({
                   className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-2.5 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Costo total del lote ({currencySymbol})</label>
-                <input required type="number" step="0.01" min="0" value={totalCost} onChange={e => setTotalCost(e.target.value)}
-                  placeholder="Ej: 1400.00"
+                <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">
+                  {isManualAdjustment ? 'Inversión (0 = mantener costo)' : 'Costo total lote'} ({currencySymbol})
+                </label>
+                <input required={!isManualAdjustment} type="number" step="0.01" min="0" value={totalCost} onChange={e => setTotalCost(e.target.value)}
+                  placeholder={isManualAdjustment ? "Opcional" : "Ej: 1400.00"}
                   className="w-full border border-slate-300 dark:border-slate-600 rounded-xl p-2.5 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition" />
               </div>
             </div>
