@@ -7,7 +7,8 @@ import { logger } from '@/lib/logger'
 type MethodData = { revenue: number; count: number }
 type MonthData = { month: string; revenue: number; profit: number; contado: number; fiado: number; expenses: number }
 type LowStock = { name: string; stock: number; costPrice: number; salePrice: number }
-type Expense = { id: number; amount: number; concept: string; category: string; account: string; createdAt: string }
+type Customer = { id: number; name: string; totalOwed: number }
+type Expense = { id: number; amount: number; concept: string; category: string; account: string; customerId?: number | null; createdAt: string }
 
 type FinanceData = {
   totalRevenue: number; totalProfit: number; totalExpenses: number; totalDebtPaid: number
@@ -48,6 +49,7 @@ export function FinanceView() {
   const { currencySymbol, convertToUsd } = useBcv()
   const [data, setData] = useState<FinanceData | null>(null)
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [errorMsg, setErrorMsg] = useState('')
   const [period, setPeriod] = useState('0')   // default: all time
@@ -57,14 +59,28 @@ export function FinanceView() {
   const [expenseConcept, setExpenseConcept] = useState('')
   const [expenseCategory, setExpenseCategory] = useState('COMPRA')
   const [expenseAccount, setExpenseAccount] = useState('EFECTIVO')
+  const [expenseCustomerId, setExpenseCustomerId] = useState<string>('')
   const [submittingExpense, setSubmittingExpense] = useState(false)
+
+  // New Customer logic (to match POS experience)
+  const [newCustomerName, setNewCustomerName] = useState('')
+  const [newCustomerPhone, setNewCustomerPhone] = useState('')
+  const [showNewCustomer, setShowNewCustomer] = useState(false)
+  const [isAddingCustomer, setIsAddingCustomer] = useState(false)
+  const [deletingExpId, setDeletingExpId] = useState<number | null>(null)
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
+
+  // Pagination for expenses
+  const [currentPageExpenses, setCurrentPageExpenses] = useState(1)
+  const EXPENSES_PER_PAGE = 5
 
   const loadData = useCallback(async (p: string) => {
     logger.info(`Cargando información financiera para periodo: ${p}...`, 'FINANCE')
     try {
-      const [finRes, expRes] = await Promise.all([
+      const [finRes, expRes, custRes] = await Promise.all([
         fetch('/api/finance'),
-        fetch(`/api/expenses?period=${p}`)
+        fetch(`/api/expenses?period=${p}`),
+        fetch('/api/customers')
       ])
 
       if (!finRes.ok) {
@@ -74,9 +90,11 @@ export function FinanceView() {
 
       const finData = await finRes.json()
       const expData = expRes.ok ? await expRes.json() : []
+      const custData = custRes.ok ? await custRes.json() : []
 
       setData(finData)
       setExpenses(expData)
+      setCustomers(custData)
       setErrorMsg('')
       logger.info('Datos financieros cargados exitosamente', 'FINANCE')
     } catch (err: any) {
@@ -92,6 +110,32 @@ export function FinanceView() {
     loadData(period)
   }, [loadData, period])
 
+  const handleAddCustomer = async () => {
+    if (!newCustomerName.trim()) return
+    setIsAddingCustomer(true)
+    logger.info(`Creando nuevo cliente "${newCustomerName}" desde Finanzas...`, 'FINANCE')
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCustomerName.trim(), phone: newCustomerPhone.trim() })
+      })
+      if (res.ok) {
+        const c = await res.json()
+        setCustomers(prev => [...prev, c].sort((a, b) => a.name.localeCompare(b.name)))
+        setExpenseCustomerId(String(c.id))
+        setNewCustomerName('')
+        setNewCustomerPhone('')
+        setShowNewCustomer(false)
+        logger.info(`Cliente "${c.name}" creado y seleccionado`, 'FINANCE')
+      }
+    } catch (err) {
+      logger.error('Error al crear cliente desde finanzas', 'FINANCE', err)
+    } finally {
+      setIsAddingCustomer(false)
+    }
+  }
+
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!expenseAmount || !expenseConcept) return
@@ -106,17 +150,54 @@ export function FinanceView() {
           amount: parseFloat(expenseAmount),
           concept: expenseConcept,
           category: expenseCategory,
-          account: expenseAccount
+          account: expenseAccount,
+          customerId: expenseCategory === 'PRESTAMO' ? (expenseCustomerId ? parseInt(expenseCustomerId) : null) : null
         })
       })
       if (!res.ok) throw new Error('Error al registrar salida en servidor')
 
       setExpenseAmount('')
       setExpenseConcept('')
+      setExpenseCustomerId('')
+      setCurrentPageExpenses(1) // Reset to page 1 on new expense
       await loadData(period)
       logger.info('Gasto registrado con éxito', 'FINANCE')
     } catch (err: any) {
       logger.error('Error al registrar gasto', 'FINANCE', err)
+      alert(err.message)
+    } finally {
+      setSubmittingExpense(false)
+    }
+  }
+
+  const handleDeleteExpense = async (id: number) => {
+    if (!confirm('¿Eliminar este registro de gasto? Esta acción devolverá el dinero al balance de la cuenta seleccionada.')) return
+    setDeletingExpId(id)
+    try {
+      const res = await fetch(`/api/expenses/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Error al eliminar el gasto')
+      await loadData(period)
+    } catch (err: any) {
+      alert(err.message)
+    } finally {
+      setDeletingExpId(null)
+    }
+  }
+
+  const handleUpdateExpense = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingExpense) return
+    setSubmittingExpense(true)
+    try {
+      const res = await fetch(`/api/expenses/${editingExpense.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingExpense)
+      })
+      if (!res.ok) throw new Error('Error al actualizar el gasto')
+      setEditingExpense(null)
+      await loadData(period)
+    } catch (err: any) {
       alert(err.message)
     } finally {
       setSubmittingExpense(false)
@@ -370,13 +451,56 @@ export function FinanceView() {
                   onChange={e => setExpenseCategory(e.target.value)}
                   className="w-full px-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-red-500 outline-none transition text-sm"
                 >
-                  <option value="COMPRA">Compra Mercancía</option>
-                  <option value="RETIRO">Retiro Ganancia</option>
-                  <option value="SERVICIO">Pago de Servicio</option>
-                  <option value="OTRO">Otro</option>
-                </select>
+                    <option value="COMPRA">Compra Mercancía</option>
+                    <option value="RETIRO">Retiro Ganancia</option>
+                    <option value="SERVICIO">Pago de Servicio</option>
+                    <option value="PRESTAMO">Fiado / Pendiente por Cobrar</option>
+                    <option value="OTRO">Otro</option>
+                  </select>
+                </div>
               </div>
-            </div>
+
+              {/* Customer Selector for FIADO (POS logic) */}
+              {expenseCategory === 'PRESTAMO' && (
+                <div className="animate-fade-in-down space-y-2 bg-orange-50/50 dark:bg-orange-950/10 p-4 rounded-xl border border-orange-200 dark:border-orange-800/30">
+                  <label className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase mb-1 block">👤 Cliente Deudor</label>
+                  <select
+                    required
+                    value={expenseCustomerId}
+                    onChange={e => setExpenseCustomerId(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-orange-300 dark:border-orange-700 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none transition text-sm shadow-sm"
+                  >
+                    <option value="">Seleccionar Cliente…</option>
+                    {customers.map(c => (
+                      <option key={c.id} value={c.id.toString()}>
+                        {c.name} {c.totalOwed > 0 ? `(debe ${c.totalOwed.toFixed(2)} ${currencySymbol})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  
+                  <button type="button" onClick={() => setShowNewCustomer(!showNewCustomer)} 
+                    className="text-xs text-orange-600 dark:text-orange-400 hover:underline font-bold flex items-center gap-1">
+                    {showNewCustomer ? '↑ Cancelar' : '+ Nuevo Cliente'}
+                  </button>
+
+                  {showNewCustomer && (
+                    <div className="space-y-2 pt-2 border-t border-orange-100 dark:border-orange-900/40">
+                      <input type="text" placeholder="Nombre completo *" value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-orange-400" />
+                      <input type="text" placeholder="Teléfono" value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-orange-400" />
+                      <button type="button" onClick={handleAddCustomer} disabled={isAddingCustomer}
+                        className="w-full py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg transition shadow-sm">
+                        {isAddingCustomer ? 'Creando...' : 'Agregar Cliente'}
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-orange-500 mt-1 font-medium">
+                    * El monto se asignará a la cuenta del cliente en Fiados.
+                  </p>
+                </div>
+              )}
+
             {/* Account selector */}
             <div>
               <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Cuenta de salida</label>
@@ -406,34 +530,90 @@ export function FinanceView() {
 
         {/* Expense History List */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 p-6 shadow-sm overflow-hidden flex flex-col">
-          <h3 className="font-bold text-slate-700 dark:text-slate-200 mb-4 text-lg">Últimas Salidas de Dinero</h3>
-          <div className="flex-1 overflow-y-auto max-h-[300px] space-y-2 pr-2">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-700 dark:text-slate-200 text-lg">Últimas Salidas de Dinero</h3>
+            <span className="text-xs text-slate-400 font-medium">{expenses.length} registros</span>
+          </div>
+
+          <div className="flex-1 space-y-2 mb-4">
             {expenses.length === 0 ? (
               <p className="text-center py-10 text-slate-400 text-sm italic">No hay salidas registradas aún</p>
             ) : (
-              expenses.map(exp => (
-                <div key={exp.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-700/30">
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">
-                      {exp.category === 'COMPRA' ? '🛒' : exp.category === 'RETIRO' ? '🏦' : exp.category === 'SERVICIO' ? '⚡' : '📝'}
-                    </span>
-                    <div>
-                      <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight">{exp.concept}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5">
-                        {new Date(exp.createdAt).toLocaleString()} · {exp.category}
-                      </p>
-                      <span className={`text-[10px] font-bold mt-0.5 inline-block ${(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).color}`}>
-                        {(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).emoji} {(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).label}
+              expenses
+                .slice((currentPageExpenses - 1) * EXPENSES_PER_PAGE, currentPageExpenses * EXPENSES_PER_PAGE)
+                .map(exp => (
+                  <div key={exp.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/40 rounded-xl border border-slate-100 dark:border-slate-700/30 transition-all hover:border-slate-300 dark:hover:border-slate-600">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xl">
+                        {exp.category === 'COMPRA' ? '🛒' : exp.category === 'RETIRO' ? '🏦' : exp.category === 'SERVICIO' ? '⚡' : '📝'}
                       </span>
+                      <div>
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight">{exp.concept}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {new Date(exp.createdAt).toLocaleString()} · {exp.category}
+                        </p>
+                        <span className={`text-[10px] font-bold mt-0.5 inline-block ${(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).color}`}>
+                          {(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).emoji} {(ACCOUNT_META[exp.account || 'EFECTIVO'] || ACCOUNT_META.EFECTIVO).label}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right flex items-center gap-4">
+                      <div>
+                        <p className="text-sm font-black text-red-600 dark:text-red-400">-{exp.amount.toFixed(2)} {currencySymbol}</p>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button 
+                          onClick={() => setEditingExpense(exp)}
+                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
+                          title="Editar"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                        <button 
+                          disabled={deletingExpId === exp.id}
+                          onClick={() => handleDeleteExpense(exp.id)}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition"
+                          title="Eliminar"
+                        >
+                          {deletingExpId === exp.id ? (
+                            <div className="h-4 w-4 border-2 border-red-500 border-t-transparent animate-spin rounded-full" />
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5-4h4m-4 0a2 2 0 00-2 2v1h8V5a2 2 0 00-2-2m-4 0h4" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-black text-red-600 dark:text-red-400">-{exp.amount.toFixed(2)} {currencySymbol}</p>
-                  </div>
-                </div>
-              ))
+                ))
             )}
           </div>
+
+          {/* Pagination Controls */}
+          {expenses.length > EXPENSES_PER_PAGE && (
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
+              <button
+                disabled={currentPageExpenses === 1}
+                onClick={() => setCurrentPageExpenses(prev => prev - 1)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-xl disabled:opacity-30 transition hover:bg-slate-200 dark:hover:bg-slate-600"
+              >
+                Anterior
+              </button>
+              <span className="text-xs font-bold text-slate-400">
+                Página {currentPageExpenses} de {Math.ceil(expenses.length / EXPENSES_PER_PAGE)}
+              </span>
+              <button
+                disabled={currentPageExpenses >= Math.ceil(expenses.length / EXPENSES_PER_PAGE)}
+                onClick={() => setCurrentPageExpenses(prev => prev + 1)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-xl disabled:opacity-30 transition hover:bg-slate-200 dark:hover:bg-slate-600"
+              >
+                Siguiente
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -529,6 +709,120 @@ export function FinanceView() {
         )}
       </div>
 
+      {/* Edit Modal */}
+      {editingExpense && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md p-8 relative space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-extrabold text-slate-800 dark:text-slate-100">✏️ Editar Salida</h3>
+              <button onClick={() => setEditingExpense(null)} className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <form onSubmit={handleUpdateExpense} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-400 uppercase">Concepto / Destino</label>
+                <input required type="text" value={editingExpense.concept}
+                  onChange={e => setEditingExpense({...editingExpense, concept: e.target.value})}
+                  className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition text-sm" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Monto ({currencySymbol})</label>
+                  <input required type="number" step="0.01" value={editingExpense.amount}
+                    onChange={e => setEditingExpense({...editingExpense, amount: parseFloat(e.target.value)})}
+                    className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-400 uppercase">Categoría</label>
+                  <select value={editingExpense.category}
+                    onChange={e => setEditingExpense({...editingExpense, category: e.target.value})}
+                    className="w-full px-4 py-2 border border-slate-300 dark:border-slate-600 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition text-sm">
+                    <option value="COMPRA">Compra Mercancía</option>
+                    <option value="RETIRO">Retiro Ganancia</option>
+                    <option value="SERVICIO">Pago de Servicio</option>
+                    <option value="PRESTAMO">Fiado / Pendiente por Cobrar</option>
+                    <option value="OTRO">Otro</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Customer Selector for FIADO (POS logic) */}
+              {expenseCategory === 'PRESTAMO' && (
+                <div className="animate-fade-in-down space-y-2 bg-orange-50/50 dark:bg-orange-950/10 p-4 rounded-xl border border-orange-200 dark:border-orange-800/30">
+                  <label className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase mb-1 block">👤 Cliente Deudor</label>
+                  <select
+                    required
+                    value={expenseCustomerId}
+                    onChange={e => setExpenseCustomerId(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-orange-300 dark:border-orange-700 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-orange-500 outline-none transition text-sm shadow-sm"
+                  >
+                    <option value="">Seleccionar Cliente…</option>
+                    {customers.map(c => (
+                      <option key={c.id} value={c.id.toString()}>
+                        {c.name} {c.totalOwed > 0 ? `(debe ${c.totalOwed.toFixed(2)} ${currencySymbol})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  
+                  <button type="button" onClick={() => setShowNewCustomer(!showNewCustomer)} 
+                    className="text-xs text-orange-600 dark:text-orange-400 hover:underline font-bold flex items-center gap-1">
+                    {showNewCustomer ? '↑ Cancelar' : '+ Nuevo Cliente'}
+                  </button>
+
+                  {showNewCustomer && (
+                    <div className="space-y-2 pt-2 border-t border-orange-100 dark:border-orange-900/40">
+                      <input type="text" placeholder="Nombre completo *" value={newCustomerName} onChange={e => setNewCustomerName(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-orange-400" />
+                      <input type="text" placeholder="Teléfono" value={newCustomerPhone} onChange={e => setNewCustomerPhone(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-orange-400" />
+                      <button type="button" onClick={handleAddCustomer} disabled={isAddingCustomer}
+                        className="w-full py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-lg transition shadow-sm">
+                        {isAddingCustomer ? 'Creando...' : 'Agregar Cliente'}
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-orange-500 mt-1 font-medium">
+                    * El monto se asignará a la cuenta del cliente en Fiados.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase">Cuenta de salida</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(ACCOUNT_META).map(([key, meta]) => (
+                    <button key={key} type="button" onClick={() => setEditingExpense({...editingExpense, account: key})}
+                      className={`flex flex-col items-center gap-1 py-3 px-1 rounded-xl border-2 text-[10px] font-bold transition-all ${
+                        editingExpense.account === key
+                          ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                          : 'border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/40 text-slate-500 hover:border-slate-300'
+                      }`}>
+                      <span className="text-xl">{meta.emoji}</span>
+                      <span>{meta.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-6">
+                <button type="button" onClick={() => setEditingExpense(null)}
+                  className="flex-1 py-3 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-bold rounded-xl transition">
+                  Cancelar
+                </button>
+                <button disabled={submittingExpense} type="submit"
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition shadow-lg shadow-indigo-500/20 disabled:opacity-50">
+                  {submittingExpense ? 'Procesando...' : 'Aplicar Cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

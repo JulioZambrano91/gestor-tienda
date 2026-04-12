@@ -27,6 +27,14 @@ export async function GET() {
     }
 
     const totalDebtPaid = debtPayments.reduce((s, p) => s + p.amount, 0)
+    
+    // Calcular egresos por cuenta
+    const expensesPerAccount = expenses.reduce((acc, e) => {
+      const key = e.account || 'EFECTIVO'
+      acc[key] = (acc[key] || 0) + e.amount
+      return acc
+    }, {} as Record<string, number>)
+    
     const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
 
     const monthlyMap: Record<string, { revenue: number; profit: number; contado: number; fiado: number; expenses: number }> = {}
@@ -79,9 +87,10 @@ export async function GET() {
     const totalRevenue = realSales.reduce((s, r) => s + r.totalAmount, 0) + totalDebtPaid
     const totalProfit = realSales.reduce((s, r) => s + r.totalProfit, 0)
     
-    const cashInHand = (byMethod['EFECTIVO'].revenue + totalDebtPaid) - totalExpenses
-    const pagoMovilBalance = byMethod['PAGO_MOVIL'].revenue
-    const puntoVentaBalance = byMethod['PUNTO_VENTA'].revenue
+    // Balances con descuentos por cuenta precisos
+    const cashInHand = (byMethod['EFECTIVO'].revenue + totalDebtPaid) - (expensesPerAccount['EFECTIVO'] || 0)
+    const pagoMovilBalance = byMethod['PAGO_MOVIL'].revenue - (expensesPerAccount['PAGO_MOVIL'] || 0)
+    const puntoVentaBalance = byMethod['PUNTO_VENTA'].revenue - (expensesPerAccount['PUNTO_VENTA'] || 0)
     const globalBalance = cashInHand + pagoMovilBalance + puntoVentaBalance
 
     logger.info(`GET /api/finance - Report generated (${Date.now() - start}ms)`, 'API')

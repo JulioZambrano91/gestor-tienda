@@ -11,10 +11,18 @@ type Summary = {
   totalRevenue: number; totalProfit: number; totalSales: number
   contadoSales: number; fiadoSales: number; fiadoRevenue: number; period: string
 }
-type SaleItem = { quantity: number; priceAtSale: number; product: { name: string } }
+type SaleItem = { 
+  id?: number; 
+  productId: number; 
+  quantity: number; 
+  priceAtSale: number; 
+  product: { name: string } 
+}
 type Sale = {
   id: number; createdAt: string; totalAmount: number; totalProfit: number
-  paymentType: string; paymentMethod?: string; customer?: { name: string }; items: SaleItem[]
+  paymentType: string; paymentMethod?: string; customer?: { name: string }; 
+  customerId?: number | null; 
+  items: SaleItem[]
 }
 
 const PERIODS = [
@@ -100,20 +108,27 @@ export function HistoryView() {
 
   const handleSaveEdit = async () => {
     if (!editSale) return
-    logger.info(`Actualizando pago de venta #${editSale.id}...`, 'HISTORY')
+    logger.info(`Actualizando venta #${editSale.id}...`, 'HISTORY')
     try {
       const res = await fetch(`/api/sales/${editSale.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paymentMethod: editSale.paymentMethod, paymentType: editSale.paymentType })
+        body: JSON.stringify({ 
+          paymentMethod: editSale.paymentMethod, 
+          paymentType: editSale.paymentType,
+          items: editSale.items // New: send items array
+        })
       })
-      if (!res.ok) throw new Error()
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Error al actualizar venta')
+      }
       setEditSale(null)
       loadStats()
       logger.info('Venta actualizada correctamente', 'HISTORY')
-    } catch (error) {
+    } catch (error: any) {
       logger.error(`Falló actualización de venta #${editSale.id}`, 'HISTORY', error)
-      alert('Error al actualizar la venta.')
+      alert(error.message || 'Error al actualizar la venta.')
     }
   }
 // ... rest of the file
@@ -176,34 +191,125 @@ export function HistoryView() {
   return (
     <div className="space-y-6 animate-fade-in-down pb-10">
 
-      {/* Edit Modal */}
+      {/* Edit Modal (Expanded) */}
       {editSale && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-5">
-            <h3 className="font-bold text-slate-800 dark:text-slate-100 text-lg">✏️ Editar Venta #{editSale.id}</h3>
-            <div>
-              <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Método de pago</label>
-              <div className="grid grid-cols-2 gap-2">
-                {Object.entries(METHOD_LABELS).map(([key, meta]) => (
-                  <button key={key} type="button"
-                    onClick={() => setEditSale({ ...editSale, paymentMethod: key, paymentType: key === 'FIADO' ? 'FIADO' : 'CONTADO' })}
-                    className={`py-2 rounded-xl text-xs font-bold border-2 transition-all ${editSale.paymentMethod === key || (editSale.paymentType === key)
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
-                      : 'border-slate-200 dark:border-slate-600 text-slate-500'}`}>
-                    {meta.label}
-                  </button>
-                ))}
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-lg space-y-6 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between">
+              <h3 className="font-extrabold text-slate-800 dark:text-slate-100 text-xl">✏️ Editar Venta #{editSale.id}</h3>
+              <button 
+                onClick={() => setEditSale(null)}
+                className="text-slate-400 hover:text-slate-600 transition"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-4 overflow-y-auto pr-2 flex-1">
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Método de pago</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {Object.entries(METHOD_LABELS).map(([key, meta]) => (
+                    <button key={key} type="button"
+                      onClick={() => setEditSale({ ...editSale, paymentMethod: key, paymentType: key === 'FIADO' ? 'FIADO' : 'CONTADO' })}
+                      className={`py-2 rounded-xl text-xs font-bold border-2 transition-all ${editSale.paymentMethod === key || (editSale.paymentType === key && key === 'FIADO')
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                        : 'border-slate-200 dark:border-slate-600 text-slate-500 hover:border-slate-300'}`}>
+                      {meta.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Productos en esta venta</label>
+                <div className="space-y-3 bg-slate-50 dark:bg-slate-900/40 p-4 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                  {editSale.items.length === 0 ? (
+                    <p className="text-xs text-center text-slate-400 italic py-4">No hay productos en la venta</p>
+                  ) : (
+                    editSale.items.map((item, idx) => (
+                      <div key={idx} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end pb-3 border-b border-slate-200 dark:border-slate-800 last:border-0 last:pb-0">
+                        <div className="sm:col-span-2">
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate mb-1">{item.product.name}</p>
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <label className="text-[10px] text-slate-400 font-bold uppercase">Cant.</label>
+                              <input 
+                                type="number" 
+                                min="1" 
+                                className="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-sm"
+                                value={item.quantity}
+                                onChange={e => {
+                                  const newItems = [...editSale.items];
+                                  newItems[idx].quantity = parseInt(e.target.value) || 0;
+                                  setEditSale({ ...editSale, items: newItems });
+                                }}
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <label className="text-[10px] text-slate-400 font-bold uppercase">Precio</label>
+                              <input 
+                                type="number" 
+                                step="0.01"
+                                className="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md text-sm"
+                                value={item.priceAtSale}
+                                onChange={e => {
+                                  const newItems = [...editSale.items];
+                                  newItems[idx].priceAtSale = parseFloat(e.target.value) || 0;
+                                  setEditSale({ ...editSale, items: newItems });
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] text-slate-400 font-bold uppercase">Subtotal</p>
+                          <p className="text-sm font-black text-slate-700 dark:text-slate-200">
+                            {(item.quantity * item.priceAtSale).toFixed(2)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <button 
+                            onClick={() => {
+                              const newItems = editSale.items.filter((_, i) => i !== idx);
+                              setEditSale({ ...editSale, items: newItems });
+                            }}
+                            className="p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition"
+                            title="Quitar producto"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5-4h4m-4 0a2 2 0 00-2 2v1h8V5a2 2 0 00-2-2m-4 0h4" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setEditSale(null)}
-                className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-500 text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition">
-                Cancelar
-              </button>
-              <button onClick={handleSaveEdit}
-                className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition">
-                Guardar
-              </button>
+
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-700 flex flex-col gap-4">
+              <div className="flex justify-between items-center px-2">
+                <span className="text-sm font-bold text-slate-500">Nuevo Total Calculado:</span>
+                <span className="text-xl font-black text-indigo-600 dark:text-indigo-400">
+                  {editSale.items.reduce((s, i) => s + (i.quantity * i.priceAtSale), 0).toFixed(2)} {currencySymbol}
+                </span>
+              </div>
+              
+              <div className="flex gap-3">
+                <button onClick={() => setEditSale(null)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-500 text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+                  Cancelar
+                </button>
+                <button onClick={handleSaveEdit}
+                  disabled={editSale.items.length === 0}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-black shadow-lg shadow-indigo-500/20 transition">
+                  Confirmar Cambios
+                </button>
+              </div>
             </div>
           </div>
         </div>

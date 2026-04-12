@@ -14,7 +14,7 @@ type FiadoSale = {
 }
 type Customer = {
   id: number; name: string; phone?: string; totalOwed: number
-  sales: FiadoSale[]; payments: DebtPayment[]
+  sales: FiadoSale[]; payments: DebtPayment[]; expenses: { id: number; amount: number; concept: string; createdAt: string }[]
 }
 
 export function DebtsView() {
@@ -290,20 +290,21 @@ export function DebtsView() {
                     <div className="border-t border-slate-100 dark:border-slate-700/40">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-700/40">
 
-                        {/* Fiado Sales */}
+                        {/* Fiado History (Sales + Loans) */}
                         <div className="p-5">
                           <h4 className="text-sm font-bold text-slate-600 dark:text-slate-300 mb-3 flex items-center gap-2">
                             <span className="w-5 h-5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-full flex items-center justify-center text-xs">💸</span>
-                            Ventas Fiadas
+                            Ventas y Préstamos
                           </h4>
-                          {customer.sales.length === 0 ? (
-                            <p className="text-slate-400 text-sm">Sin ventas fiadas registradas.</p>
+                          {(customer.sales.length === 0 && customer.expenses.length === 0) ? (
+                            <p className="text-slate-400 text-sm">Sin deudas registradas.</p>
                           ) : (
                             <div className="space-y-3">
+                              {/* Render Sales */}
                               {customer.sales.map(sale => (
                                 <div key={sale.id} className="bg-orange-50/50 dark:bg-orange-900/10 rounded-xl p-3 border border-orange-100 dark:border-orange-800/20">
                                   <div className="flex justify-between items-center mb-2">
-                                    <span className="text-xs text-slate-400">{formatDateTime(sale.createdAt)}</span>
+                                    <span className="text-xs text-slate-400">🛍️ Venta #{sale.id} · {formatDateTime(sale.createdAt)}</span>
                                     <span className="font-bold text-orange-600 dark:text-orange-400 text-sm">{sale.totalAmount.toFixed(2)} {currencySymbol}</span>
                                   </div>
                                   <div className="space-y-1">
@@ -313,6 +314,19 @@ export function DebtsView() {
                                         <span>{(item.priceAtSale * item.quantity).toFixed(2)} {currencySymbol}</span>
                                       </div>
                                     ))}
+                                  </div>
+                                </div>
+                              ))}
+                              {/* Render Loans (Expenses) */}
+                              {customer.expenses.map(exp => (
+                                <div key={exp.id} className="bg-red-50/30 dark:bg-red-900/10 rounded-xl p-3 border border-red-100 dark:border-red-800/20">
+                                  <div className="flex justify-between items-center">
+                                    <div className="flex flex-col">
+                                      <span className="text-xs text-slate-400 font-bold uppercase">🏦 Préstamo / Adelanto</span>
+                                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 mt-1">{exp.concept}</span>
+                                      <span className="text-[10px] text-slate-400">{formatDateTime(exp.createdAt)}</span>
+                                    </div>
+                                    <span className="font-ex-bold text-red-600 dark:text-red-400 text-sm">{exp.amount.toFixed(2)} {currencySymbol}</span>
                                   </div>
                                 </div>
                               ))}

@@ -39,7 +39,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const start = Date.now()
   try {
-    const { amount, concept, category, account } = await request.json()
+    const { amount, concept, category, account, customerId } = await request.json()
     if (!concept?.trim()) {
       logger.warn('POST /api/expenses - Missing concept', 'API')
       return NextResponse.json({ error: 'Concepto requerido.' }, { status: 400 })
@@ -50,14 +50,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Monto inválido.' }, { status: 400 })
     }
 
-    const expense = await prisma.expense.create({
-      data: {
-        amount: parsedAmount,
-        concept: concept.trim(),
-        category: category || 'OTRO',
-        account: account || 'EFECTIVO'
+    const expense = await prisma.$transaction(async (tx) => {
+      const e = await tx.expense.create({
+        data: {
+          amount: parsedAmount,
+          concept: concept.trim(),
+          category: category || 'OTRO',
+          account: account || 'EFECTIVO',
+          customerId: customerId ? (typeof customerId === 'string' ? parseInt(customerId) : customerId) : null
+        }
+      })
+
+      // Si es un préstamo, sumamos a la deuda del cliente
+      if (category === 'PRESTAMO' && customerId) {
+        await tx.customer.update({
+          where: { id: typeof customerId === 'string' ? parseInt(customerId) : customerId },
+          data: { totalOwed: { increment: parsedAmount } }
+        })
       }
+      return e
     })
+
     logger.info(`POST /api/expenses - Registered "${concept}" for ${amount} (${Date.now() - start}ms)`, 'API')
     return NextResponse.json(expense, { status: 201 })
   } catch (error) {

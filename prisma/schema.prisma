@@ -77,6 +77,7 @@ model Customer {
   
   sales       Sale[]
   payments    DebtPayment[]
+  expenses    Expense[]
 }
 
 model DebtPayment {
@@ -93,7 +94,10 @@ model Expense {
   id        Int      @id @default(autoincrement())
   amount    Float
   concept   String
-  category  String   @default("OTRO")   // "COMPRA", "RETIRO", "SERVICIO", "OTRO"
+  category  String   @default("OTRO")   // "COMPRA", "RETIRO", "SERVICIO", "PRESTAMO", "OTRO"
   account   String   @default("EFECTIVO") // "EFECTIVO", "PAGO_MOVIL", "PUNTO_VENTA"
   createdAt DateTime @default(now())
+
+  customerId Int?
+  customer   Customer? @relation(fields: [customerId], references: [id])
 }
