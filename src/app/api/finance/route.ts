@@ -70,20 +70,29 @@ export async function GET() {
     const totalRevenue = sales.reduce((s, r) => s + r.totalAmount, 0)
     const totalProfit = sales.reduce((s, r) => s + r.totalProfit, 0)
     
-    // "Dinero en caja" (Efectivo real) = (Ventas Efectivo + Abonos) - Gastos
-    // Note: This logic assumes expenses are paid in cash. 
+    // "Dinero en caja" (Efectivo físico) = Ventas Efectivo + Abonos cobrados - Gastos
     const cashInHand = (byMethod['EFECTIVO'].revenue + totalDebtPaid) - totalExpenses
 
+    // Per-account balances (electronic accounts — no expenses deducted, those go from cash)
+    const pagoMovilBalance = byMethod['PAGO_MOVIL'].revenue
+    const puntoVentaBalance = byMethod['PUNTO_VENTA'].revenue
+
+    // Global total across all accounts (physical + digital) — fiado excluded as it's not collected
+    const globalBalance = cashInHand + pagoMovilBalance + puntoVentaBalance
+
     return NextResponse.json({
-      totalRevenue, 
-      totalProfit, 
+      totalRevenue,
+      totalProfit,
       totalExpenses,
       totalDebtPaid,
       cashInHand,
+      pagoMovilBalance,
+      puntoVentaBalance,
+      globalBalance,
       totalSales: sales.length,
       byMethod,
       monthly,
-      stockValue, 
+      stockValue,
       stockSaleValue,
       lowStockProducts,
       profitMarginPct: totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100) : 0
