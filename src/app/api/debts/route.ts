@@ -14,7 +14,7 @@ export async function GET() {
         },
         payments: { orderBy: { createdAt: 'desc' } },
         expenses: {
-          where: { category: 'PRESTAMO' },
+          where: { category: { in: ['PRESTAMO', 'DEUDA_VIEJA'] } },
           orderBy: { createdAt: 'desc' }
         }
       }

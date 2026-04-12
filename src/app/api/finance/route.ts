@@ -28,14 +28,21 @@ export async function GET() {
 
     const totalDebtPaid = debtPayments.reduce((s, p) => s + p.amount, 0)
     
+    const activeExpenses = expenses.filter(e => e.category !== 'DEUDA_VIEJA')
+
     // Calcular egresos por cuenta
-    const expensesPerAccount = expenses.reduce((acc, e) => {
+    const expensesPerAccount = activeExpenses.reduce((acc, e) => {
       const key = e.account || 'EFECTIVO'
-      acc[key] = (acc[key] || 0) + e.amount
+      if (e.category === 'INGRESO_EXTRA') {
+        acc[key] = (acc[key] || 0) - e.amount
+      } else {
+        acc[key] = (acc[key] || 0) + e.amount
+      }
       return acc
     }, {} as Record<string, number>)
     
-    const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0)
+    const justExpenses = activeExpenses.filter(e => e.category !== 'INGRESO_EXTRA')
+    const totalExpenses = justExpenses.reduce((s, e) => s + e.amount, 0)
 
     const monthlyMap: Record<string, { revenue: number; profit: number; contado: number; fiado: number; expenses: number }> = {}
     for (let i = 5; i >= 0; i--) {
@@ -72,6 +79,7 @@ export async function GET() {
     }
 
     for (const e of expenses) {
+      if (e.category === 'DEUDA_VIEJA' || e.category === 'INGRESO_EXTRA') continue
       const d = new Date(e.createdAt)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (monthlyMap[key]) monthlyMap[key].expenses += e.amount
