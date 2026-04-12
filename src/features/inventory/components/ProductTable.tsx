@@ -14,7 +14,7 @@ type Product = {
 }
 
 export function ProductTable({ products, loading }: { products: Product[], loading: boolean }) {
-  const { convertToBs } = useBcv()
+  const { convertToUsd, currencySymbol } = useBcv()
 
   if (loading) {
     return (
@@ -47,8 +47,8 @@ export function ProductTable({ products, loading }: { products: Product[], loadi
             <th className="p-4 pl-6">Foto</th>
             <th className="p-4">Producto</th>
             <th className="p-4">Stock</th>
-            <th className="p-4">Costo ($)</th>
-            <th className="p-4">Venta ($)</th>
+            <th className="p-4">Costo ({currencySymbol.toUpperCase()})</th>
+            <th className="p-4">Venta ({currencySymbol.toUpperCase()})</th>
             <th className="p-4">Margen %</th>
           </tr>
         </thead>
@@ -82,14 +82,14 @@ export function ProductTable({ products, loading }: { products: Product[], loadi
                 </td>
                 <td className="p-4 font-medium text-slate-600 dark:text-slate-300">
                   <div className="flex flex-col">
-                    <span><span className="text-slate-400 mr-1">$</span>{p.costPrice}</span>
-                    <span className="text-xs text-slate-400">~{convertToBs(p.costPrice)} Bs</span>
+                    <span>{p.costPrice} <span className="text-slate-400 ml-1 text-xs">{currencySymbol}</span></span>
+                    <span className="text-xs text-slate-400">~{convertToUsd(p.costPrice)} USD</span>
                   </div>
                 </td>
                 <td className="p-4 font-bold text-slate-900 dark:text-white">
                   <div className="flex flex-col">
-                    <span><span className="text-emerald-500 dark:text-emerald-400 mr-1">$</span>{p.salePrice}</span>
-                    <span className="text-xs text-slate-400 font-normal">~{convertToBs(p.salePrice)} Bs</span>
+                    <span>{p.salePrice} <span className="text-emerald-500 dark:text-emerald-400 ml-1 text-xs">{currencySymbol}</span></span>
+                    <span className="text-xs text-slate-400 font-normal">~{convertToUsd(p.salePrice)} USD</span>
                   </div>
                 </td>
                 <td className="p-4 font-bold text-emerald-600 dark:text-emerald-400">

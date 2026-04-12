@@ -8,7 +8,7 @@ import { BcvIndicator } from '@/components/BcvIndicator'
 
 export const metadata: Metadata = {
   title: storeConfig.storeName,
-  description: 'Gestor de Tienda Local XD',
+  description: 'Gestor de Tienda Local',
 }
 
 export default function RootLayout({

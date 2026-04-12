@@ -1,9 +1,10 @@
 import { PrismaClient } from '@prisma/client'
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
 
 const prismaClientSingleton = () => {
-  return new PrismaClient({
-    datasourceUrl: process.env.DATABASE_URL || "file:./prisma/dev.db"
-  })
+  // Use adapter for Prisma 7 compatibility - requires a config object with url
+  const adapter = new PrismaBetterSqlite3({ url: 'file:./prisma/dev.db' })
+  return new PrismaClient({ adapter })
 }
 
 declare global {

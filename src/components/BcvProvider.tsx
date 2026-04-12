@@ -1,17 +1,22 @@
 "use client"
 
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import storeConfig from '@/config/storeProperties.json'
 
 type BcvContextType = {
   bcvRate: number | null;
   loading: boolean;
   convertToBs: (usd: number) => string;
+  convertToUsd: (bs: number) => string;
+  currencySymbol: string;
 }
 
 const BcvContext = createContext<BcvContextType>({
   bcvRate: null,
   loading: true,
-  convertToBs: () => "0.00"
+  convertToBs: () => "0.00",
+  convertToUsd: () => "0.00",
+  currencySymbol: storeConfig.currencySymbol
 })
 
 export function BcvProvider({ children }: { children: React.ReactNode }) {
@@ -40,8 +45,13 @@ export function BcvProvider({ children }: { children: React.ReactNode }) {
     return (usd * bcvRate).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   }
 
+  const convertToUsd = (bs: number) => {
+    if (!bcvRate || bcvRate === 0) return "0.00"
+    return (bs / bcvRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
   return (
-    <BcvContext.Provider value={{ bcvRate, loading, convertToBs }}>
+    <BcvContext.Provider value={{ bcvRate, loading, convertToBs, convertToUsd, currencySymbol: storeConfig.currencySymbol }}>
       {children}
     </BcvContext.Provider>
   )
