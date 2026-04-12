@@ -53,6 +53,7 @@ export function HistoryView() {
   
   // Filtering and Pagination
   const [methodFilter, setMethodFilter] = useState('all')
+  const [productSearch, setProductSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 10
 
@@ -136,9 +137,16 @@ export function HistoryView() {
 
   // Filter and Paginate
   const filteredSales = recentSales.filter(sale => {
-    if (methodFilter === 'all') return true
+    // 1. Method Filter
     const sMethod = sale.paymentMethod || (sale.paymentType === 'FIADO' ? 'FIADO' : 'EFECTIVO')
-    return sMethod === methodFilter
+    const matchesMethod = methodFilter === 'all' || sMethod === methodFilter
+
+    // 2. Product Filter
+    const matchesProduct = productSearch === '' || sale.items.some(item => 
+      item.product.name.toLowerCase().includes(productSearch.toLowerCase())
+    )
+
+    return matchesMethod && matchesProduct
   })
 
   const totalPages = Math.ceil(filteredSales.length / ITEMS_PER_PAGE)
@@ -240,21 +248,37 @@ export function HistoryView() {
       )}
 
       {/* Search & Method Filters */}
-      <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-wrap gap-1.5">
-          <button onClick={() => { setMethodFilter('all'); setCurrentPage(1) }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${methodFilter === 'all' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
-            Todos los métodos
-          </button>
-          {Object.entries(METHOD_LABELS).map(([key, meta]) => (
-            <button key={key} onClick={() => { setMethodFilter(key); setCurrentPage(1) }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${methodFilter === key ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
-              {meta.label}
-            </button>
-          ))}
+      <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700/50 flex flex-col gap-4">
+        {/* Product Search */}
+        <div className="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 top-3 h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input 
+            type="text" 
+            placeholder="Filtrar historial por nombre de producto..." 
+            value={productSearch}
+            onChange={e => { setProductSearch(e.target.value); setCurrentPage(1) }}
+            className="w-full pl-10 pr-4 py-2.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-900/50 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500 outline-none transition text-sm"
+          />
         </div>
-        <div className="text-xs text-slate-400 font-medium">
-          Mostrando {filteredSales.length} {filteredSales.length === 1 ? 'venta' : 'ventas'}
+
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex flex-wrap gap-1.5">
+            <button onClick={() => { setMethodFilter('all'); setCurrentPage(1) }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${methodFilter === 'all' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
+              Todos los métodos
+            </button>
+            {Object.entries(METHOD_LABELS).map(([key, meta]) => (
+              <button key={key} onClick={() => { setMethodFilter(key); setCurrentPage(1) }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${methodFilter === key ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'}`}>
+                {meta.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-slate-400 font-medium">
+            Mostrando {filteredSales.length} {filteredSales.length === 1 ? 'venta' : 'ventas'}
+          </div>
         </div>
       </div>
 
