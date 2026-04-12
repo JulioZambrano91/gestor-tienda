@@ -1,19 +1,40 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 
+// period can be: '1h'=24h, '3d', '7d', '30d', '90d', '0'=all-time
+function parsePeriod(param: string): Date | null {
+  const now = new Date()
+  if (param === '0' || param === 'all') return null  // all time
+  const match = param.match(/^(\d+)(h|d)$/)
+  if (!match) {
+    // legacy: plain number = days
+    const days = parseInt(param)
+    if (isNaN(days)) return null
+    const d = new Date(now)
+    d.setDate(d.getDate() - days)
+    return d
+  }
+  const [, num, unit] = match
+  const n = parseInt(num)
+  if (unit === 'h') { const d = new Date(now); d.setHours(d.getHours() - n); return d }
+  if (unit === 'd') { const d = new Date(now); d.setDate(d.getDate() - n); return d }
+  return null
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const period = searchParams.get('period') || '30' // days
+    const periodParam = searchParams.get('period') || '30d'
+    const since = parsePeriod(periodParam)
 
-    const since = new Date()
-    since.setDate(since.getDate() - parseInt(period))
+    const whereClause = since ? { createdAt: { gte: since } } : {}
 
     const [allSales, topProducts, periodSales] = await Promise.all([
-      // Full sales history (most recent 100)
+      // Full sales history (most recent 200)
       prisma.sale.findMany({
+        where: whereClause,
         orderBy: { createdAt: 'desc' },
-        take: 100,
+        take: 200,
         include: {
           items: { include: { product: { select: { name: true } } } },
           customer: { select: { name: true } }
@@ -23,7 +44,7 @@ export async function GET(request: Request) {
       // Top 5 products by quantity sold in period
       prisma.saleItem.groupBy({
         by: ['productId'],
-        where: { sale: { createdAt: { gte: since } } },
+        where: { sale: whereClause },
         _sum: { quantity: true, priceAtSale: true },
         orderBy: { _sum: { quantity: 'desc' } },
         take: 5,
@@ -31,8 +52,8 @@ export async function GET(request: Request) {
 
       // Period summary
       prisma.sale.findMany({
-        where: { createdAt: { gte: since } },
-        select: { totalAmount: true, totalProfit: true, paymentType: true, createdAt: true }
+        where: whereClause,
+        select: { totalAmount: true, totalProfit: true, paymentType: true, paymentMethod: true, createdAt: true }
       })
     ])
 
@@ -57,9 +78,11 @@ export async function GET(request: Request) {
     const fiadoSales = periodSales.filter((r: any) => r.paymentType === 'FIADO').length
     const fiadoRevenue = periodSales.filter((r: any) => r.paymentType === 'FIADO').reduce((s: number, r: any) => s + r.totalAmount, 0)
 
-    // Daily revenue for last 7 days chart
+    // Daily chart — adapt chart window to period
+    const isShort = periodParam.endsWith('h') || periodParam === '3d' || periodParam === '1d'
+    const chartDays = isShort ? 3 : 7
     const dailyMap: Record<string, { revenue: number; profit: number }> = {}
-    for (let i = 6; i >= 0; i--) {
+    for (let i = chartDays - 1; i >= 0; i--) {
       const d = new Date()
       d.setDate(d.getDate() - i)
       const key = d.toISOString().slice(0, 10)
@@ -74,14 +97,24 @@ export async function GET(request: Request) {
     }
     const dailyChart = Object.entries(dailyMap).map(([date, vals]) => ({ date, ...vals }))
 
+    // Group sales by month-year
+    const byMonth: Record<string, typeof allSales> = {}
+    for (const sale of allSales) {
+      const d = new Date(sale.createdAt)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!byMonth[key]) byMonth[key] = []
+      byMonth[key].push(sale)
+    }
+
     return NextResponse.json({
-      summary: { totalRevenue, totalProfit, totalSales, contadoSales, fiadoSales, fiadoRevenue, period: parseInt(period) },
+      summary: { totalRevenue, totalProfit, totalSales, contadoSales, fiadoSales, fiadoRevenue, period: periodParam },
       topProducts: topProductsMapped,
       dailyChart,
-      recentSales: allSales
+      recentSales: allSales,
+      byMonth
     })
   } catch (error) {
-    console.error("GET Stats Error:", error)
-    return NextResponse.json({ error: "Error al obtener estadísticas." }, { status: 500 })
+    console.error('GET Stats Error:', error)
+    return NextResponse.json({ error: 'Error al obtener estadísticas.' }, { status: 500 })
   }
 }

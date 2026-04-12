@@ -7,29 +7,52 @@ type DayData = { date: string; revenue: number; profit: number }
 type TopProduct = { productId: number; name: string; totalQty: number; totalRevenue: number }
 type Summary = {
   totalRevenue: number; totalProfit: number; totalSales: number
-  contadoSales: number; fiadoSales: number; fiadoRevenue: number; period: number
+  contadoSales: number; fiadoSales: number; fiadoRevenue: number; period: string
 }
 type SaleItem = { quantity: number; priceAtSale: number; product: { name: string } }
 type Sale = {
   id: number; createdAt: string; totalAmount: number; totalProfit: number
-  paymentType: string; customer?: { name: string }; items: SaleItem[]
+  paymentType: string; paymentMethod?: string; customer?: { name: string }; items: SaleItem[]
+}
+
+const PERIODS = [
+  { label: '24h', value: '24h' },
+  { label: '3d',  value: '3d'  },
+  { label: '7d',  value: '7d'  },
+  { label: '1m',  value: '30d' },
+  { label: '3m',  value: '90d' },
+  { label: 'Todo', value: '0'  },
+]
+
+const MONTH_LABELS: Record<string, string> = {
+  '01':'Enero','02':'Febrero','03':'Marzo','04':'Abril','05':'Mayo','06':'Junio',
+  '07':'Julio','08':'Agosto','09':'Septiembre','10':'Octubre','11':'Noviembre','12':'Diciembre'
+}
+
+const METHOD_LABELS: Record<string, { label: string; color: string }> = {
+  EFECTIVO:    { label: '💵 Efectivo',       color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  PAGO_MOVIL:  { label: '📱 Pago Móvil',     color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+  PUNTO_VENTA: { label: '💳 Punto de Venta', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+  FIADO:       { label: '💸 Fiado',          color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' },
 }
 
 export function HistoryView() {
   const { currencySymbol, convertToUsd } = useBcv()
-  const [period, setPeriod] = useState('30')
+  const [period, setPeriod] = useState('0')
   const [summary, setSummary] = useState<Summary | null>(null)
   const [topProducts, setTopProducts] = useState<TopProduct[]>([])
   const [dailyChart, setDailyChart] = useState<DayData[]>([])
   const [recentSales, setRecentSales] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedSale, setExpandedSale] = useState<number | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [editSale, setEditSale] = useState<Sale | null>(null)
 
   const loadStats = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/stats?period=${period}`)
-      if (!res.ok) throw new Error("Error cargando estadísticas")
+      if (!res.ok) throw new Error('Error cargando estadísticas')
       const data = await res.json()
       setSummary(data.summary)
       setTopProducts(data.topProducts)
@@ -44,6 +67,36 @@ export function HistoryView() {
 
   useEffect(() => { loadStats() }, [loadStats])
 
+  const handleDelete = async (id: number) => {
+    if (!confirm('¿Eliminar esta venta del historial? Esta acción no se puede deshacer.')) return
+    setDeletingId(id)
+    try {
+      const res = await fetch(`/api/sales/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Error al eliminar')
+      setRecentSales(prev => prev.filter(s => s.id !== id))
+    } catch {
+      alert('No se pudo eliminar la venta.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editSale) return
+    try {
+      const res = await fetch(`/api/sales/${editSale.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paymentMethod: editSale.paymentMethod, paymentType: editSale.paymentType })
+      })
+      if (!res.ok) throw new Error()
+      setEditSale(null)
+      loadStats()
+    } catch {
+      alert('Error al actualizar la venta.')
+    }
+  }
+
   const maxRevenue = Math.max(...dailyChart.map(d => d.revenue), 1)
 
   const formatDate = (iso: string) => {
@@ -54,6 +107,21 @@ export function HistoryView() {
   const formatDateTime = (iso: string) => {
     const d = new Date(iso)
     return d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Group sales by month-year
+  const salesByMonth: Record<string, Sale[]> = {}
+  for (const sale of recentSales) {
+    const d = new Date(sale.createdAt)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    if (!salesByMonth[key]) salesByMonth[key] = []
+    salesByMonth[key].push(sale)
+  }
+  const sortedMonths = Object.keys(salesByMonth).sort((a, b) => b.localeCompare(a))
+
+  const getMonthLabel = (key: string) => {
+    const [year, month] = key.split('-')
+    return `${MONTH_LABELS[month] || month} ${year}`
   }
 
   if (loading) {
@@ -68,21 +136,54 @@ export function HistoryView() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in-down">
+    <div className="space-y-6 animate-fade-in-down pb-10">
+
+      {/* Edit Modal */}
+      {editSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-5">
+            <h3 className="font-bold text-slate-800 dark:text-slate-100 text-lg">✏️ Editar Venta #{editSale.id}</h3>
+            <div>
+              <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Método de pago</label>
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(METHOD_LABELS).map(([key, meta]) => (
+                  <button key={key} type="button"
+                    onClick={() => setEditSale({ ...editSale, paymentMethod: key, paymentType: key === 'FIADO' ? 'FIADO' : 'CONTADO' })}
+                    className={`py-2 rounded-xl text-xs font-bold border-2 transition-all ${editSale.paymentMethod === key || (editSale.paymentType === key)
+                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                      : 'border-slate-200 dark:border-slate-600 text-slate-500'}`}>
+                    {meta.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => setEditSale(null)}
+                className="flex-1 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-500 text-sm font-bold hover:bg-slate-50 dark:hover:bg-slate-700 transition">
+                Cancelar
+              </button>
+              <button onClick={handleSaveEdit}
+                className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold transition">
+                Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-700/50 gap-4">
         <div>
-          <h2 className="text-3xl font-extrabold text-slate-800 dark:text-slate-100">📊 Estadísticas</h2>
-          <p className="text-slate-500 dark:text-slate-400 mt-1">Rendimiento financiero de tu tienda</p>
+          <h2 className="text-3xl font-extrabold text-slate-800 dark:text-slate-100">📊 Historial de Ventas</h2>
+          <p className="text-slate-500 dark:text-slate-400 mt-1">
+            {summary ? `${summary.totalSales} ventas · ${summary.totalRevenue.toFixed(2)} ${currencySymbol} total` : 'Cargando...'}
+          </p>
         </div>
-        <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700/50 rounded-xl p-1">
-          {[['7', '7 días'], ['30', '30 días'], ['90', '3 meses']].map(([val, label]) => (
-            <button
-              key={val}
-              onClick={() => setPeriod(val)}
-              className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${period === val ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
-            >
-              {label}
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/50 rounded-xl p-1 self-start sm:self-auto">
+          {PERIODS.map(p => (
+            <button key={p.value} onClick={() => setPeriod(p.value)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${period === p.value ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}>
+              {p.label}
             </button>
           ))}
         </div>
@@ -92,26 +193,10 @@ export function HistoryView() {
       {summary && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            {
-              label: 'Ingresos Totales', value: `${summary.totalRevenue.toFixed(2)} ${currencySymbol}`,
-              sub: `~ ${convertToUsd(summary.totalRevenue)} USD`,
-              color: 'from-indigo-500 to-purple-600', icon: '💰'
-            },
-            {
-              label: 'Ganancia Neta', value: `${summary.totalProfit.toFixed(2)} ${currencySymbol}`,
-              sub: summary.totalRevenue > 0 ? `${((summary.totalProfit / summary.totalRevenue) * 100).toFixed(1)}% de margen` : '0%',
-              color: 'from-emerald-500 to-teal-600', icon: '📈'
-            },
-            {
-              label: 'Ventas Realizadas', value: String(summary.totalSales),
-              sub: `${summary.contadoSales} contado · ${summary.fiadoSales} fiado`,
-              color: 'from-blue-500 to-cyan-600', icon: '🧾'
-            },
-            {
-              label: 'Total en Fiados', value: `${summary.fiadoRevenue.toFixed(2)} ${currencySymbol}`,
-              sub: `${summary.fiadoSales} venta${summary.fiadoSales !== 1 ? 's' : ''} pendiente${summary.fiadoSales !== 1 ? 's' : ''}`,
-              color: 'from-orange-500 to-red-500', icon: '💸'
-            }
+            { label: 'Ingresos Totales', value: `${summary.totalRevenue.toFixed(2)} ${currencySymbol}`, sub: `~ ${convertToUsd(summary.totalRevenue)} USD`, color: 'from-indigo-500 to-purple-600', icon: '💰' },
+            { label: 'Ganancia Neta',    value: `${summary.totalProfit.toFixed(2)} ${currencySymbol}`, sub: summary.totalRevenue > 0 ? `${((summary.totalProfit / summary.totalRevenue) * 100).toFixed(1)}% margen` : '0%', color: 'from-emerald-500 to-teal-600', icon: '📈' },
+            { label: 'Ventas',           value: String(summary.totalSales), sub: `${summary.contadoSales} contado · ${summary.fiadoSales} fiado`, color: 'from-blue-500 to-cyan-600', icon: '🧾' },
+            { label: 'Total en Fiados',  value: `${summary.fiadoRevenue.toFixed(2)} ${currencySymbol}`, sub: `${summary.fiadoSales} venta${summary.fiadoSales !== 1 ? 's' : ''} pendiente${summary.fiadoSales !== 1 ? 's' : ''}`, color: 'from-orange-500 to-red-500', icon: '💸' }
           ].map((kpi, i) => (
             <div key={i} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 p-5 shadow-sm overflow-hidden relative">
               <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${kpi.color} opacity-5 rounded-full translate-x-6 -translate-y-6`} />
@@ -128,7 +213,7 @@ export function HistoryView() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Bar Chart */}
         <div className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 p-6 shadow-sm">
-          <h3 className="font-bold text-slate-700 dark:text-slate-200 mb-5 text-base">Ingresos últimos 7 días</h3>
+          <h3 className="font-bold text-slate-700 dark:text-slate-200 mb-5 text-base">Ingresos recientes</h3>
           <div className="flex items-end justify-between gap-2 h-40">
             {dailyChart.map((day) => {
               const pct = maxRevenue > 0 ? (day.revenue / maxRevenue) * 100 : 0
@@ -148,7 +233,7 @@ export function HistoryView() {
                       )}
                     </div>
                   </div>
-                  <span className="text-xs text-slate-400 dark:text-slate-500 mt-1 capitalize truncate w-full text-center">
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 capitalize truncate w-full text-center">
                     {formatDate(day.date).split(',')[0]}
                   </span>
                 </div>
@@ -165,9 +250,9 @@ export function HistoryView() {
         <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 p-6 shadow-sm">
           <h3 className="font-bold text-slate-700 dark:text-slate-200 mb-5 text-base">🏆 Más Vendidos</h3>
           {topProducts.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-32 text-slate-400 space-y-2">
+            <div className="flex flex-col items-center justify-center h-32 text-slate-400 space-y-2 text-center">
               <span className="text-3xl">📦</span>
-              <p className="text-sm">Sin ventas en el período</p>
+              <p className="text-sm">Sin ventas en el período seleccionado</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -178,9 +263,7 @@ export function HistoryView() {
                   <div key={p.productId} className="space-y-1">
                     <div className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
-                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-yellow-100 text-yellow-700' : i === 1 ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-600'} dark:bg-slate-700 dark:text-slate-300`}>
-                          {i + 1}
-                        </span>
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? 'bg-yellow-100 text-yellow-700' : i === 1 ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-600'} dark:bg-slate-700 dark:text-slate-300`}>{i + 1}</span>
                         <span className="font-medium text-slate-700 dark:text-slate-200 truncate max-w-[120px]">{p.name}</span>
                       </div>
                       <span className="text-slate-400 text-xs font-medium">{p.totalQty} uds.</span>
@@ -196,83 +279,129 @@ export function HistoryView() {
         </div>
       </div>
 
-      {/* Sales History */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 dark:border-slate-700/50">
-          <h3 className="font-bold text-slate-800 dark:text-slate-100 text-lg">Historial de Ventas</h3>
-          <p className="text-slate-400 text-sm mt-0.5">Últimas {recentSales.length} transacciones</p>
+      {/* Sales History — grouped by month */}
+      {recentSales.length === 0 ? (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 shadow-sm p-16 flex flex-col items-center text-center space-y-3 text-slate-400">
+          <span className="text-5xl">🧾</span>
+          <p className="font-bold text-lg">No hay ventas registradas</p>
+          <p className="text-sm">Cambia el filtro de período o realiza ventas desde el Cajero</p>
         </div>
-        {recentSales.length === 0 ? (
-          <div className="p-16 flex flex-col items-center justify-center text-center space-y-3 text-slate-400">
-            <span className="text-5xl">🧾</span>
-            <p className="font-medium">No hay ventas registradas aún</p>
-            <p className="text-sm">Realiza tu primera venta desde el Panel de Cajero</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-100 dark:divide-slate-700/40">
-            {recentSales.map(sale => (
-              <div key={sale.id}>
-                <button
-                  onClick={() => setExpandedSale(expandedSale === sale.id ? null : sale.id)}
-                  className="w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors text-left group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${sale.paymentType === 'FIADO' ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-emerald-100 dark:bg-emerald-900/30'}`}>
-                      {sale.paymentType === 'FIADO' ? '💸' : '💵'}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-800 dark:text-slate-100">
-                          Venta #{sale.id}
-                        </span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${sale.paymentType === 'FIADO' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
-                          {sale.paymentType}
-                        </span>
+      ) : (
+        <div className="space-y-4">
+          {sortedMonths.map(monthKey => {
+            const monthSales = salesByMonth[monthKey]
+            const monthTotal = monthSales.reduce((s, r) => s + r.totalAmount, 0)
+            const monthProfit = monthSales.reduce((s, r) => s + r.totalProfit, 0)
+            return (
+              <div key={monthKey} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700/50 shadow-sm overflow-hidden">
+                {/* Month header */}
+                <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700/50 flex items-center justify-between bg-slate-50 dark:bg-slate-900/30">
+                  <div>
+                    <h3 className="font-black text-slate-800 dark:text-slate-100 text-base">{getMonthLabel(monthKey)}</h3>
+                    <p className="text-xs text-slate-400 mt-0.5">{monthSales.length} venta{monthSales.length !== 1 ? 's' : ''}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-extrabold text-slate-800 dark:text-slate-100">{monthTotal.toFixed(2)} <span className="text-xs text-slate-400">{currencySymbol}</span></p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">+{monthProfit.toFixed(2)} {currencySymbol} ganancia</p>
+                  </div>
+                </div>
+
+                {/* Sales rows */}
+                <div className="divide-y divide-slate-100 dark:divide-slate-700/40">
+                  {monthSales.map(sale => {
+                    const methodKey = sale.paymentMethod || (sale.paymentType === 'FIADO' ? 'FIADO' : 'EFECTIVO')
+                    const methodMeta = METHOD_LABELS[methodKey] || METHOD_LABELS.EFECTIVO
+                    return (
+                      <div key={sale.id}>
+                        <button
+                          onClick={() => setExpandedSale(expandedSale === sale.id ? null : sale.id)}
+                          className="w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors text-left group"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${sale.paymentType === 'FIADO' ? 'bg-orange-100 dark:bg-orange-900/30' : 'bg-emerald-100 dark:bg-emerald-900/30'}`}>
+                              {sale.paymentType === 'FIADO' ? '💸' : '💵'}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-slate-800 dark:text-slate-100 text-sm">Venta #{sale.id}</span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${methodMeta.color}`}>{methodMeta.label}</span>
+                              </div>
+                              <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                                <span>{formatDateTime(sale.createdAt)}</span>
+                                {sale.customer && <span>· 👤 {sale.customer.name}</span>}
+                                <span>· {sale.items.length} producto{sale.items.length !== 1 ? 's' : ''}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 ml-2">
+                            <div className="text-right">
+                              <div className="font-extrabold text-slate-800 dark:text-slate-100 text-sm">{sale.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{currencySymbol}</span></div>
+                              <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">+{sale.totalProfit.toFixed(2)}</div>
+                            </div>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={e => { e.stopPropagation(); setEditSale(sale) }}
+                                className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-colors"
+                                title="Editar método de pago"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={e => { e.stopPropagation(); handleDelete(sale.id) }}
+                                disabled={deletingId === sale.id}
+                                className="p-1.5 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-100 transition-colors disabled:opacity-50"
+                                title="Eliminar venta"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                        </button>
+
+                        {/* Expanded detail */}
+                        {expandedSale === sale.id && (
+                          <div className="bg-slate-50 dark:bg-slate-900/30 px-6 py-4 border-t border-slate-100 dark:border-slate-700/30">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-slate-400 text-xs uppercase text-left">
+                                  <th className="pb-2">Producto</th>
+                                  <th className="pb-2 text-center">Cant.</th>
+                                  <th className="pb-2 text-right">Precio</th>
+                                  <th className="pb-2 text-right">Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-200 dark:divide-slate-700/30">
+                                {sale.items.map((item, idx) => (
+                                  <tr key={idx} className="text-slate-700 dark:text-slate-300">
+                                    <td className="py-1.5 font-medium">{item.product.name}</td>
+                                    <td className="py-1.5 text-center text-slate-400">{item.quantity}</td>
+                                    <td className="py-1.5 text-right">{item.priceAtSale.toFixed(2)} {currencySymbol}</td>
+                                    <td className="py-1.5 text-right font-bold">{(item.priceAtSale * item.quantity).toFixed(2)} {currencySymbol}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr className="border-t border-slate-200 dark:border-slate-700">
+                                  <td colSpan={3} className="pt-2 text-xs font-bold text-slate-500 uppercase">Total</td>
+                                  <td className="pt-2 text-right font-extrabold text-slate-800 dark:text-slate-100">{sale.totalAmount.toFixed(2)} {currencySymbol}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        )}
                       </div>
-                      <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
-                        <span>{formatDateTime(sale.createdAt)}</span>
-                        {sale.customer && <span>· 👤 {sale.customer.name}</span>}
-                        <span>· {sale.items.length} producto{sale.items.length !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0 ml-4">
-                    <div className="font-extrabold text-slate-800 dark:text-slate-100">{sale.totalAmount.toFixed(2)} <span className="text-xs font-normal text-slate-400">{currencySymbol}</span></div>
-                    <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">+{sale.totalProfit.toFixed(2)} {currencySymbol}</div>
-                    <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 text-slate-300 dark:text-slate-600 mx-auto mt-1 transition-transform ${expandedSale === sale.id ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </button>
-                {expandedSale === sale.id && (
-                  <div className="bg-slate-50 dark:bg-slate-900/30 px-6 py-4 border-t border-slate-100 dark:border-slate-700/30">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-slate-400 text-xs uppercase text-left">
-                          <th className="pb-2">Producto</th>
-                          <th className="pb-2 text-center">Cant.</th>
-                          <th className="pb-2 text-right">Precio</th>
-                          <th className="pb-2 text-right">Subtotal</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200 dark:divide-slate-700/30">
-                        {sale.items.map((item, idx) => (
-                          <tr key={idx} className="text-slate-700 dark:text-slate-300">
-                            <td className="py-1.5 font-medium">{item.product.name}</td>
-                            <td className="py-1.5 text-center text-slate-400">{item.quantity}</td>
-                            <td className="py-1.5 text-right">{item.priceAtSale.toFixed(2)} {currencySymbol}</td>
-                            <td className="py-1.5 text-right font-bold">{(item.priceAtSale * item.quantity).toFixed(2)} {currencySymbol}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                    )
+                  })}
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

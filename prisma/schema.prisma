@@ -18,15 +18,29 @@ model Product {
   id          Int      @id @default(autoincrement())
   name        String
   description String?
-  costPrice   Float
-  salePrice   Float
+  costPrice   Float    // Costo unitario promedio ponderado
+  salePrice   Float    // Precio de venta por unidad
   stock       Int      @default(0)
   imageUrl    String?
-  
+
   categoryId  Int?
   category    Category? @relation(fields: [categoryId], references: [id])
-  
-  saleItems   SaleItem[]
+
+  saleItems       SaleItem[]
+  stockMovements  StockMovement[]
+}
+
+model StockMovement {
+  id          Int      @id @default(autoincrement())
+  type        String   // "ENTRADA" | "SALIDA_VENTA"
+  quantity    Int
+  totalCost   Float    // total pagado en ese lote (para ENTRADA)
+  unitCost    Float    // costo unitario de ese lote
+  note        String?  // ej: "Compra 12 bultos Harina PAN"
+  createdAt   DateTime @default(now())
+
+  productId   Int
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model Sale {
@@ -78,7 +92,8 @@ model DebtPayment {
 model Expense {
   id        Int      @id @default(autoincrement())
   amount    Float
-  concept   String   // "Compra de mercancía", "Gastos operativos", "Retiro de ganancias", etc.
-  category  String   @default("OTRO") // "COMPRA", "RETIRO", "SERVICIO", "OTRO"
+  concept   String
+  category  String   @default("OTRO")   // "COMPRA", "RETIRO", "SERVICIO", "OTRO"
+  account   String   @default("EFECTIVO") // "EFECTIVO", "PAGO_MOVIL", "PUNTO_VENTA"
   createdAt DateTime @default(now())
 }
