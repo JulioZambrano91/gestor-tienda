@@ -30,26 +30,61 @@ export async function GET() {
     
     const activeExpenses = expenses.filter(e => e.category !== 'DEUDA_VIEJA')
 
-    // Calcular egresos por cuenta
+    // Helper: normaliza BANCO → PAGO_MOVIL (para fines de balance se trata como banco genérico)
+    const normalizeAccount = (acc: string) => acc === 'BANCO' ? 'PAGO_MOVIL' : acc
+
+    // Calcular egresos/ingresos por cuenta
     const expensesPerAccount = activeExpenses.reduce((acc, e) => {
-      const key = e.account || 'EFECTIVO'
+      const key = normalizeAccount(e.account || 'EFECTIVO')
       if (e.category === 'INGRESO_EXTRA') {
+        // Ingreso extra / destino de transferencia → resta el gasto neto (suma al balance)
         acc[key] = (acc[key] || 0) - e.amount
+      } else if (e.category === 'TRANSFER_OUT') {
+        // Egreso de transferencia → suma al gasto de esa cuenta (resta del balance)
+        acc[key] = (acc[key] || 0) + e.amount
       } else {
+        // Gasto real
         acc[key] = (acc[key] || 0) + e.amount
       }
       return acc
     }, {} as Record<string, number>)
     
-    const justExpenses = activeExpenses.filter(e => e.category !== 'INGRESO_EXTRA')
+    const justExpenses = activeExpenses.filter(e => e.category !== 'INGRESO_EXTRA' && e.category !== 'TRANSFER_OUT' && e.category !== 'TRANSFERENCIA')
     const totalExpenses = justExpenses.reduce((s, e) => s + e.amount, 0)
 
+    // Calcular rango dinámico de meses
+    const allDates = [
+      ...sales.map(s => new Date(s.createdAt)),
+      ...expenses.map(e => new Date(e.createdAt)),
+      ...debtPayments.map(p => new Date(p.createdAt))
+    ].filter(d => !isNaN(d.getTime()))
+
     const monthlyMap: Record<string, { revenue: number; profit: number; contado: number; fiado: number; expenses: number }> = {}
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i)
+    
+    // Si no hay datos, inicializar con el mes actual
+    if (allDates.length === 0) {
+      const d = new Date()
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       monthlyMap[key] = { revenue: 0, profit: 0, contado: 0, fiado: 0, expenses: 0 }
+    } else {
+      // Encontrar min y max
+      const minDate = new Date(Math.min(...allDates.map(d => d.getTime())))
+      const maxDate = new Date(Math.max(...allDates.map(d => d.getTime())))
+      
+      // Asegurarse de incluir al menos los últimos 6 meses si es un negocio nuevo para el gráfico
+      // O simplemente los meses del rango. El usuario dijo "no predefinido".
+      // Llenaremos todos los meses entre min y max.
+      let curr = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
+      const last = new Date(maxDate.getFullYear(), maxDate.getMonth(), 1)
+      
+      while (curr <= last) {
+        const key = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, '0')}`
+        monthlyMap[key] = { revenue: 0, profit: 0, contado: 0, fiado: 0, expenses: 0 }
+        curr.setMonth(curr.getMonth() + 1)
+      }
     }
+
+    const availableMonths = Object.keys(monthlyMap).sort().reverse()
     
     for (const s of sales) {
       const d = new Date(s.createdAt)
@@ -79,7 +114,7 @@ export async function GET() {
     }
 
     for (const e of expenses) {
-      if (e.category === 'DEUDA_VIEJA' || e.category === 'INGRESO_EXTRA') continue
+      if (e.category === 'DEUDA_VIEJA' || e.category === 'INGRESO_EXTRA' || e.category === 'TRANSFER_OUT' || e.category === 'TRANSFERENCIA') continue
       const d = new Date(e.createdAt)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
       if (monthlyMap[key]) monthlyMap[key].expenses += e.amount
@@ -99,7 +134,8 @@ export async function GET() {
     const cashInHand = (byMethod['EFECTIVO'].revenue + totalDebtPaid) - (expensesPerAccount['EFECTIVO'] || 0)
     const pagoMovilBalance = byMethod['PAGO_MOVIL'].revenue - (expensesPerAccount['PAGO_MOVIL'] || 0)
     const puntoVentaBalance = byMethod['PUNTO_VENTA'].revenue - (expensesPerAccount['PUNTO_VENTA'] || 0)
-    const globalBalance = cashInHand + pagoMovilBalance + puntoVentaBalance
+    const bancoBalance = pagoMovilBalance + puntoVentaBalance
+    const globalBalance = cashInHand + bancoBalance
 
     logger.info(`GET /api/finance - Report generated (${Date.now() - start}ms)`, 'API')
 
@@ -111,10 +147,12 @@ export async function GET() {
       cashInHand,
       pagoMovilBalance,
       puntoVentaBalance,
+      bancoBalance,
       globalBalance,
       totalSales: sales.length,
       byMethod,
       monthly,
+      availableMonths,
       stockValue,
       stockSaleValue,
       lowStockProducts,
