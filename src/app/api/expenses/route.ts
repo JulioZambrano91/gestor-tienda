@@ -22,7 +22,8 @@ export async function GET(request: Request) {
     const since = parseSince(period)
     logger.info(`GET /api/expenses?period=${period || 'all'}`, 'API')
 
-    const whereClause = since ? { createdAt: { gte: since } } : {}
+    const whereClause: any = { category: { not: 'DEUDA_VIEJA' } }
+    if (since) whereClause.createdAt = { gte: since }
     const expenses = await prisma.expense.findMany({
       where: whereClause,
       orderBy: { createdAt: 'desc' },
